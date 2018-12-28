@@ -6,5 +6,6 @@ build:
 clean:
 	@go clean
 
-run: build
-	go run main.go
+test:
+	@PKG_CONFIG_PATH="/usr/local/lib/pkgconfig" go test
+

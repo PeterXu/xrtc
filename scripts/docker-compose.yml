@@ -1,0 +1,15 @@
+version: '2'
+
+services:
+  xrtc-proxy:
+    image: peterxu/docker-xrtc:latest 
+    container_name: xrtc-proxy
+    stdin_open: true
+    tty: true
+    ports:
+      - 6000:6000/udp
+      - 6080:6080
+      - 6443:6443
+    network_mode: default
+    extra_hosts:
+      - "candidate_host_ip:${candidate_host_ip}"

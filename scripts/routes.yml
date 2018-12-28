@@ -1,0 +1,35 @@
+services:
+    httpsvr1:
+        proto: http
+        net:
+            addr: :6443
+            tls_crt_file: /tmp/etc/cert.pem
+            tls_key_file: /tmp/etc/cert.key
+        http:
+            servername: _
+            root: /tmp/html
+
+    tcpsvr1:
+        proto: tcp
+        net:
+            addr: :6080
+            tls_crt_file: /tmp/etc/cert.pem
+            tls_key_file: /tmp/etc/cert.key
+            enable_ice: true
+            candidate_ips:
+                - candidate_host_ip
+        enable_http: false
+        http:
+            servername: _
+            root: /tmp/html
+
+    udpsvr1:
+        proto: udp
+        net:
+            addr: :6000
+            tls_crt_file: /tmp/etc/cert.pem
+            tls_key_file: /tmp/etc/cert.key
+            enable_ice: true
+            candidate_ips:
+                - candidate_host_ip
+

@@ -3,20 +3,23 @@ package main
 import (
 	"os"
 
-	webrtc "github.com/PeterXu/xrtc"
-	"github.com/PeterXu/xrtc/exit"
+	"github.com/PeterXu/xrtc/util"
+	log "github.com/PeterXu/xrtc/util"
+
+	webrtc "github.com/PeterXu/xrtc/src"
 )
 
-func main() {
-	TestServer()
+func init() {
+	log.SetLogDefault()
+	log.SetLogFlags(log.LogFlags() | log.Lmilliseconds)
 }
 
-func TestServer() {
+func main() {
 	hub := webrtc.Inst()
 
-	exit.Listen(func(s os.Signal) {
-		hub.Exit()
+	util.AppListen(func(s os.Signal) {
+		hub.Close()
 	})
 
-	exit.Wait()
+	util.AppWait()
 }

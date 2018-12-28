@@ -1,3 +1,6 @@
+// Package uuid allows to generate uuid with string.
+//
+// Based-on https://github.com/fabiolb/fabio/proxy/uuid.
 package uuid
 
 import (

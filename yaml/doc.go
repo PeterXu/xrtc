@@ -137,6 +137,8 @@
 // Any line where the first non-space character is a sharp sign (#) is a comment.
 // It will be ignored.
 // Only full-line comments are allowed.
+//
+// Based-on https://github.com/kylelemons/go-gypsy.
 package yaml
 
 // BUG(kevlar): Multi-line strings are currently not supported.

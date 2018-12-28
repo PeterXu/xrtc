@@ -5,8 +5,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/PeterXu/xrtc"
-	"github.com/PeterXu/xrtc/exit"
+	webrtc "github.com/PeterXu/xrtc/src"
+	"github.com/PeterXu/xrtc/util"
 )
 
 func main() {
@@ -18,11 +18,11 @@ func main() {
 func TestServer() {
 	hub := webrtc.Inst()
 
-	exit.Listen(func(s os.Signal) {
+	util.AppListen(func(s os.Signal) {
 		hub.Exit()
 	})
 
-	exit.Wait()
+	util.AppWait()
 }
 
 const kSdpSample = `m=application 0 ICE/SDP
@@ -79,7 +79,7 @@ func TestIce() {
 }
 
 func TestYaml() {
-	var fname string = "./etc/routes.yml"
+	var fname string = "./routes.yml"
 	log.Println("[yaml] load file,", fname)
 	config := webrtc.NewConfig()
 	if !config.Load(fname) {
@@ -87,4 +87,7 @@ func TestYaml() {
 		return
 	}
 	log.Println("[yaml] load success")
+
+	hub := webrtc.Inst()
+	log.Println("[yaml] candidates:", hub.Candidates())
 }
