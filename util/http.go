@@ -147,6 +147,8 @@ func CheckHttpRequest(data []byte) bool {
 	}
 }
 
+/// HTTP Response Writer
+
 // This wraps an http.ResponseWriter to capture the status code and
 // the size of the response. It also implements http.Hijacker to forward
 // hijacking the connection to the wrapped writer if supported.
@@ -178,4 +180,16 @@ func (rw *HttpResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 		return hj.Hijack()
 	}
 	return nil, nil, errNoHijacker
+}
+
+/// HTTP send post
+
+func HttpSendPost(url string, data []byte) ([]byte, error) {
+	reader := bytes.NewReader(data)
+	if resp, err := http.Post(url, "", reader); err == nil {
+		defer resp.Body.Close()
+		return ioutil.ReadAll(resp.Body)
+	} else {
+		return nil, err
+	}
 }

@@ -99,9 +99,9 @@ func (h *MaxHub) handleStunBindingRequest(data []byte, addr net.Addr, misc inter
 
 		user, ok := h.clients[stunName]
 		if !ok {
-			var request *RegisterRequest
+			var request *RouteJson
 			if item := h.cache.Get(stunName); item != nil {
-				if info, ok := item.data.(*RegisterRequest); ok {
+				if info, ok := item.data.(*RouteJson); ok {
 					request = info
 				}
 			}

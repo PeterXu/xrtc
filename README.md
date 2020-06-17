@@ -16,6 +16,49 @@
 
 <br>
 
+## 0. How To Use
+
+```
+1. Create your local sdp offer,
+2. Prepare your sdp answer,
+3. Collect your server candidates,
+
+4. Send your ICE to proxy by HTTP-POST '/webrtc/route',
+{
+	'session_key': 'xxx', 	// optional
+	'offer_ice': {
+		'ufrag': 'xxx',			// required
+		'pwd': 'xxx',			// required
+		'options': 'xxx'		// optional
+	},
+	'answer_ice': {
+		'ufrag': 'xxx',			// required
+		'pwd': 'xxx',			// required
+		'options': 'xxx'		// optional
+	},
+	'candidates' : [			// required(1 or 1+)
+		'xxx1',
+		'xxx2'
+	]
+}
+
+5. Receive HTTP response from proxy.
+{
+	'session_key': 'xxx', 	// optional, the same as above
+	'candidates' : [			// required
+		'xxx1',
+		'xxx2'
+	]
+}
+
+6. Set your offer and anwer to PeerConnection.
+7. Set received candidates(from proxy) to your PeerConnection.
+8. Then your client may connect to server or proxy (decided by received candidates).
+```
+
+
+<br>
+
 ## 1. Cases
 
 ### 1). Direct cases

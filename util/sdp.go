@@ -507,7 +507,7 @@ func (m *MediaDesc) GetUfrag() string {
 	}
 }
 
-func (m *MediaDesc) GetPasswd() string {
+func (m *MediaDesc) GetPwd() string {
 	mt := m.GetMediaType()
 	if (mt & kMediaAudio) != 0 {
 		return m.Sdp.audios[0].ice_pwd
@@ -515,6 +515,20 @@ func (m *MediaDesc) GetPasswd() string {
 		return m.Sdp.videos[0].ice_pwd
 	} else if (mt & kMediaApplication) != 0 {
 		return m.Sdp.applications[0].ice_pwd
+	} else {
+		Warnln("[desc] invalid media type = ", mt)
+		return ""
+	}
+}
+
+func (m *MediaDesc) GetOptions() string {
+	mt := m.GetMediaType()
+	if (mt & kMediaAudio) != 0 {
+		return m.Sdp.audios[0].ice_options
+	} else if (mt & kMediaVideo) != 0 {
+		return m.Sdp.videos[0].ice_options
+	} else if (mt & kMediaApplication) != 0 {
+		return m.Sdp.applications[0].ice_options
 	} else {
 		Warnln("[desc] invalid media type = ", mt)
 		return ""
@@ -933,17 +947,19 @@ type Candidate struct {
 	NetType     string // network type
 }
 
-func ParseCandidates(lines []string) []Candidate {
+func ParseCandidates(lines []string) ([]Candidate, []string) {
 	var cands []Candidate
+	var candLines []string
 	for _, line := range lines {
 		if !strings.HasPrefix(line, "a=candidate:") {
 			continue
 		}
 		if cand := ParseCandidate(line); cand != nil {
 			cands = append(cands, *cand)
+			candLines = append(candLines, line)
 		}
 	}
-	return cands
+	return cands, candLines
 }
 
 func ParseCandidate(line string) *Candidate {

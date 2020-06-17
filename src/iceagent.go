@@ -47,7 +47,7 @@ func (s *IceAgent) Init(ufrag, pwd, remote string) bool {
 	if s.user.isIceDirect() {
 		var desc util.MediaDesc
 		if desc.Parse([]byte(remote)) {
-			s.iceCands = util.ParseCandidates(desc.GetCandidates())
+			s.iceCands, _ = util.ParseCandidates(desc.GetCandidates())
 			log.Println(s.TAG, "Init candidates", s.iceCands)
 			// connect server with cands
 			s.iceInChan = make(chan []byte, 100)

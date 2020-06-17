@@ -144,6 +144,7 @@ func LookupIP(host string) string {
 	return hostIp
 }
 
+// format: host/host:port
 func ParseHostPort(addr string) (string, int) {
 	parts := strings.Split(addr, ":")
 	if len(parts) == 1 {

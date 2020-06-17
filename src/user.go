@@ -16,8 +16,8 @@ type User struct {
 
 	leave      bool
 	activeConn *Connection // active conn
-	sendIce    SdpIceInfo
-	recvIce    SdpIceInfo
+	sendIce    SdpIceJson
+	recvIce    SdpIceJson
 
 	utime uint64 // update time
 	ctime uint64 // create time
@@ -40,18 +40,18 @@ func (u *User) getIceKey() string {
 	return u.recvIce.Ufrag + ":" + u.sendIce.Ufrag
 }
 
-func (u *User) setIceInfo(offerIce, answerIce *SdpIceInfo, candidates []string) bool {
+func (u *User) setIceInfo(offerIce, answerIce *SdpIceJson, candidates []string) bool {
 	log.Println(u.TAG, "set ice info:", offerIce, answerIce)
 	u.recvIce = *offerIce  // recv from offer(client -> proxy)
 	u.sendIce = *answerIce // send from answer(proxy -> server)
 	return u.startAgent(candidates)
 }
 
-func (u *User) getSendIce() SdpIceInfo {
+func (u *User) getSendIce() SdpIceJson {
 	return u.sendIce // from answer
 }
 
-func (u *User) getRecvIce() SdpIceInfo {
+func (u *User) getRecvIce() SdpIceJson {
 	return u.recvIce // from offer
 }
 

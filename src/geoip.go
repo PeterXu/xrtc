@@ -19,8 +19,11 @@ func init() {
 	}
 }
 
-// return false, default (srcIP->dstIP)
-// return true, use (srcIP->midIP->dstIP) when midIP is more optimal than dstIP
+// The src is client which exists in anywhere.
+// The dst is server which deployed in data-center.
+// The mid is proxy which deployed in data-center.
+//  return false: default and optimal connection: src->dst
+//  return true: change and optimal connections: src->mid->dst
 func checkGeoOptimal(srcIP, midIP, dstIP string) bool {
 	db := gGeoDB
 	if db == nil {
@@ -53,11 +56,17 @@ func checkGeoOptimal(srcIP, midIP, dstIP string) bool {
 		return false
 	}
 
-	if srcCN == midCN && srcCN != dstCN {
-		// cross country:
-		// change from (srcCN -> dstCN) to (srcCN -> midCN -> dstCN).
+	if srcCN != dstCN && srcCN == midCN {
+		// a) different country between src and dst,
+		// b) the same country for src and mid,
+		// And the connection of (mid-dst) works better than (src-dst) in general.
+		// Then change from (src -> dst) to (src -> mid -> dst).
 		return true
 	}
 
+	return false
+}
+
+func checkGeoHops(srcIP, midIP, dstIP string) bool {
 	return false
 }
