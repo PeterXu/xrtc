@@ -26,8 +26,10 @@ func loadConfig(fname string) *Config {
 	return config
 }
 
-func createServer(hub *MaxHub, cfg *NetConfig) OneServer {
+func createService(hub *MaxHub, cfg *NetConfig) OneService {
 	switch cfg.Proto {
+	case "srt":
+		return NewSrtServer(hub, cfg)
 	case "udp":
 		return NewUdpServer(hub, cfg)
 	case "tcp":
@@ -39,13 +41,6 @@ func createServer(hub *MaxHub, cfg *NetConfig) OneServer {
 	}
 }
 
-// start servers from config.
-func startServers(hub *MaxHub, config *Config) {
-	for _, cfg := range config.Servers {
-		hub.AddServer(createServer(hub, cfg))
-	}
-}
-
 // Inst the global entry function.
 func Inst() Webrtc {
 	gMutex.Lock()
@@ -54,7 +49,9 @@ func Inst() Webrtc {
 		config := loadConfig(kDefaultConfig)
 		if config != nil {
 			hub := NewMaxHub()
-			startServers(hub, config)
+			for _, cfg := range config.Services {
+				hub.AddService(createService(hub, cfg))
+			}
 			gMaxHub = hub
 		}
 	}

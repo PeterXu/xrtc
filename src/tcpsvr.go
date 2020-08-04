@@ -13,22 +13,19 @@ import (
 )
 
 type TcpServer struct {
-	TAG    string
-	hub    *MaxHub
-	ln     net.Listener
-	mtx    sync.Mutex
-	config *NetConfig
-	pool   *util.GoPool
+	OneServer
+
+	ln   net.Listener
+	mtx  sync.Mutex
+	pool *util.GoPool
 }
 
 // tcp server (https/wss/webrtc-tcp)
 func NewTcpServer(hub *MaxHub, cfg *NetConfig) *TcpServer {
 	const TAG = "[TCP]"
-	//addr := fmt.Sprintf(":%d", port)
-	addr := cfg.Net.Addr
-	log.Println(TAG, "listen on: ", addr)
 
-	l, err := net.Listen("tcp", addr)
+	log.Println(TAG, "listen tcp on: ", cfg.Net.Addr)
+	l, err := net.Listen("tcp", cfg.Net.Addr)
 	if err != nil {
 		log.Fatal(TAG, "listen error=", err)
 		return nil
@@ -39,22 +36,12 @@ func NewTcpServer(hub *MaxHub, cfg *NetConfig) *TcpServer {
 		util.SetSocketReuseAddr(tcpL)
 	}
 	svr := &TcpServer{
-		TAG:    TAG,
-		hub:    hub,
-		ln:     l,
-		config: cfg,
-		pool:   util.NewGoPool(1024),
+		ln:   l,
+		pool: util.NewGoPool(1024),
 	}
+	svr.Init(TAG, hub, cfg)
 	go svr.Run()
 	return svr
-}
-
-func (s *TcpServer) GetSslFile() (string, string) {
-	return s.config.Net.TlsCrtFile, s.config.Net.TlsKeyFile
-}
-
-func (s *TcpServer) Params() *NetParams {
-	return &s.config.Net
 }
 
 func (s *TcpServer) Run() {
@@ -91,8 +78,7 @@ func (s *TcpServer) Run() {
 	}
 }
 
-func (s *TcpServer) Close() {
-}
+/// tcp handler
 
 type TcpHandler struct {
 	TAG      string
@@ -204,11 +190,9 @@ func (h *TcpHandler) ServeTCP() {
 
 	log.Println(h.TAG, "ice main begin")
 
-	// write goroutine
-	go h.writing()
+	go h.writeLoop()
 
-	// reading
-	sendChan := h.svr.hub.ChanRecvFromOuter()
+	inChan := h.svr.GetDataInChan()
 
 	rbuf := make([]byte, 1024*128)
 	for {
@@ -217,7 +201,7 @@ func (h *TcpHandler) ServeTCP() {
 				h.stat.updateRecv(nret)
 				data := make([]byte, nret)
 				copy(data, rbuf[0:nret])
-				sendChan <- NewHubMessage(data, h.conn.RemoteAddr(), nil, h.chanRecv)
+				inChan <- NewHubMessage(data, h.conn.RemoteAddr(), nil, h.chanRecv)
 			} else {
 				log.Warnln(h.TAG, "ice read data nothing")
 			}
@@ -234,7 +218,7 @@ func (h *TcpHandler) ServeTCP() {
 	log.Println(h.TAG, "ice main end")
 }
 
-func (h *TcpHandler) writing() {
+func (h *TcpHandler) writeLoop() {
 	tickChan := time.NewTicker(time.Second * 10).C
 
 	for {

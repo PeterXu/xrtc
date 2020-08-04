@@ -10,35 +10,30 @@ import (
 )
 
 type UdpServer struct {
-	TAG    string
-	hub    *MaxHub
-	config *NetConfig
+	OneServer
 
-	conn     *net.UDPConn
-	stat     *NetStat
-	clients  map[string]*NetStat
+	conn    *net.UDPConn
+	stat    *NetStat            // total stat
+	clients map[string]*NetStat // stat of each client
+
 	chanRecv chan interface{}
 	exitTick chan bool
 }
 
 func NewUdpServer(hub *MaxHub, cfg *NetConfig) *UdpServer {
 	const TAG = "[UDP]"
-	//addr := fmt.Sprintf(":%d", port)
-	addr := cfg.Net.Addr
-	if udpAddr, err := net.ResolveUDPAddr("udp", addr); err == nil {
+	if udpAddr, err := net.ResolveUDPAddr("udp", cfg.Net.Addr); err == nil {
 		if conn, err := net.ListenUDP("udp", udpAddr); err == nil {
-			log.Println(TAG, "listen udp on: ", addr)
+			log.Println(TAG, "listen udp on:", cfg.Net.Addr)
 			util.SetSocketReuseAddr(conn)
 			svr := &UdpServer{
-				TAG:      TAG,
-				hub:      hub,
-				config:   cfg,
 				conn:     conn,
 				stat:     NewNetStat(0, 0),
 				clients:  make(map[string]*NetStat),
 				chanRecv: make(chan interface{}, 1000),
 				exitTick: make(chan bool),
 			}
+			svr.Init(TAG, hub, cfg)
 			go svr.Run()
 			return svr
 		} else {
@@ -50,22 +45,14 @@ func NewUdpServer(hub *MaxHub, cfg *NetConfig) *UdpServer {
 	return nil
 }
 
-func (u *UdpServer) Params() *NetParams {
-	return &u.config.Net
-}
-
-func (u *UdpServer) Close() {
-}
-
 func (u *UdpServer) Run() {
 	defer u.conn.Close()
 
 	log.Println(u.TAG, "main begin")
 
-	// write goroutine
-	go u.writing()
+	go u.writeLoop()
 
-	sendChan := u.hub.ChanRecvFromOuter()
+	inChan := u.GetDataInChan()
 	rbuf := make([]byte, 1024*128)
 	for {
 		if nret, raddr, err := u.conn.ReadFromUDP(rbuf[0:]); err != nil {
@@ -79,7 +66,7 @@ func (u *UdpServer) Run() {
 			u.stat.updateRecv(nret)
 			data := make([]byte, nret)
 			copy(data, rbuf[0:nret])
-			sendChan <- NewHubMessage(data, raddr, nil, u.chanRecv)
+			inChan <- NewHubMessage(data, raddr, nil, u.chanRecv)
 		}
 	}
 
@@ -88,7 +75,7 @@ func (u *UdpServer) Run() {
 	log.Println(u.TAG, "main end")
 }
 
-func (u *UdpServer) writing() {
+func (u *UdpServer) writeLoop() {
 	tickChan := time.NewTicker(time.Second * 10).C
 
 	for {

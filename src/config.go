@@ -23,7 +23,7 @@ const (
 
 // Config contains all services(udp/tcp/http)
 type Config struct {
-	Servers []*NetConfig
+	Services []*NetConfig
 }
 
 func NewConfig() *Config {
@@ -67,38 +67,40 @@ func (c *Config) Load(fname string) bool {
 
 		log.Println(uTAG, "parse service:", key, ", proto:", proto)
 
-		var netp yaml.Map
-		if netp, err = yaml.ToMap(service.Key("net")); err != nil {
+		var netParam yaml.Map
+		if netParam, err = yaml.ToMap(service.Key("net")); err != nil {
 			log.Warn(uTAG, "check service net, err=", err)
 			continue
 		}
 
 		netProto := strings.ToLower(proto.String())
 		switch netProto {
+		case "srt":
+			svr := NewNetConfig(key, netProto, netParam)
+			c.Services = append(c.Services, svr)
 		case "udp":
-			udpsvr := NewUDPConfig(key, netp)
-			c.Servers = append(c.Servers, udpsvr)
+			svr := NewNetConfig(key, netProto, netParam)
+			c.Services = append(c.Services, svr)
 		case "tcp":
-			tcpsvr := NewTCPConfig(key, netp)
+			svr := NewNetConfig(key, netProto, netParam)
 			enableHttp := yaml.ToString(service.Key("enable_http"))
 			//log.Println(uTAG, "check tcp's enable_http=", enableHttp)
-			tcpsvr.EnableHttp = (enableHttp == "true")
-			if tcpsvr.EnableHttp {
+			svr.EnableHttp = (enableHttp == "true")
+			if svr.EnableHttp {
 				if httpp, err := yaml.ToMap(service.Key("http")); err == nil {
-					tcpsvr.Http.Load(httpp)
+					svr.Http.Load(httpp)
 				}
 			}
-			c.Servers = append(c.Servers, tcpsvr)
+			c.Services = append(c.Services, svr)
 		case "http":
-			httpsvr := NewHTTPConfig(key, netp)
-			enableHttp := yaml.ToString(service.Key("enable_http"))
-			httpsvr.EnableHttp = (enableHttp == "true") // desperated
+			svr := NewNetConfig(key, netProto, netParam)
+			svr.EnableHttp = true
 			if httpp, err := yaml.ToMap(service.Key("http")); err == nil {
-				httpsvr.Http.Load(httpp)
+				svr.Http.Load(httpp)
 			}
-			c.Servers = append(c.Servers, httpsvr)
+			c.Services = append(c.Services, svr)
 		default:
-			log.Warn(uTAG, "unsupported proto=", proto)
+			log.Warn(uTAG, "skip unsupported proto=", proto)
 		}
 		fmt.Println()
 	}
@@ -174,21 +176,8 @@ type NetConfig struct {
 	Http       HttpParams // for tcp/http
 }
 
-func NewUDPConfig(name string, netp yaml.Map) *NetConfig {
-	cfg := &NetConfig{Name: name, Proto: "udp"}
-	cfg.Net.Load(netp, cfg.Proto)
-	return cfg
-}
-
-func NewTCPConfig(name string, netp yaml.Map) *NetConfig {
-	cfg := &NetConfig{Name: name, Proto: "tcp"}
-	cfg.Net.Load(netp, cfg.Proto)
-	cfg.Http = kDefaultHttpParams
-	return cfg
-}
-
-func NewHTTPConfig(name string, netp yaml.Map) *NetConfig {
-	cfg := &NetConfig{Name: name, Proto: "http"}
+func NewNetConfig(name, proto string, netp yaml.Map) *NetConfig {
+	cfg := &NetConfig{Name: name, Proto: proto}
 	cfg.Net.Load(netp, cfg.Proto)
 	cfg.Http = kDefaultHttpParams
 	return cfg

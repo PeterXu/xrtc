@@ -26,6 +26,7 @@ prepare:
 	@cp scripts/routes.yml  /tmp/etc/
 	@cp -f scripts/certs/cert.pem /tmp/etc/cert.pem
 	@cp -f scripts/certs/key.pem /tmp/etc/cert.key
+	@tar xf scripts/GeoLite2-City.mmdb.tgz -C /tmp/etc/
 
 ## docker
 

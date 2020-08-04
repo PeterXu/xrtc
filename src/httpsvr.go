@@ -13,42 +13,29 @@ import (
 )
 
 type HttpServer struct {
-	TAG    string
-	hub    *MaxHub
-	ln     net.Listener
-	config *NetConfig
-	pool   *util.GoPool
+	OneServer
+
+	ln   net.Listener
+	pool *util.GoPool
 }
 
 // http server (http/https/ws/wss)
 func NewHttpServer(hub *MaxHub, cfg *NetConfig) *HttpServer {
 	const TAG = "[HTTP]"
-	//addr := fmt.Sprintf(":%d", port)
-	addr := cfg.Net.Addr
-	log.Println(TAG, "listen on: ", addr)
 
-	l, err := net.Listen("tcp", addr)
+	log.Println(TAG, "listen http on:", cfg.Net.Addr)
+	l, err := net.Listen("tcp", cfg.Net.Addr)
 	if err != nil {
 		log.Fatal(TAG, "listen error=", err)
 		return nil
 	}
 	svr := &HttpServer{
-		TAG:    TAG,
-		hub:    hub,
-		ln:     l,
-		config: cfg,
-		pool:   util.NewGoPool(1024),
+		ln:   l,
+		pool: util.NewGoPool(1024),
 	}
+	svr.Init(TAG, hub, cfg)
 	go svr.Run()
 	return svr
-}
-
-func (s *HttpServer) GetSslFile() (string, string) {
-	return s.config.Net.TlsCrtFile, s.config.Net.TlsKeyFile
-}
-
-func (s *HttpServer) Params() *NetParams {
-	return &s.config.Net
 }
 
 func (s *HttpServer) Run() {
@@ -88,6 +75,8 @@ func (s *HttpServer) Run() {
 func (s *HttpServer) Close() {
 	//s.ln.Close()
 }
+
+/// http handler
 
 type HttpHandler struct {
 	TAG  string

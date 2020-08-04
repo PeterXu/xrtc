@@ -9,12 +9,6 @@ import (
 	log "github.com/PeterXu/xrtc/util"
 )
 
-type OneServer interface {
-	Run()
-	Close()
-	Params() *NetParams
-}
-
 type HubMessage struct {
 	data []byte
 	from net.Addr
@@ -31,13 +25,16 @@ type MaxHub struct {
 
 	connections map[string]*Connection
 	clients     map[string]*User
-	servers     []OneServer
+	services    []OneService
 
 	// cache control
 	cache *Cache
 
-	// data from outer client(over udpsvr/tcpsvr)
-	chanRecvFromOuter chan interface{}
+	// data from client(over udpsvr/tcpsvr)
+	chanRecvFromClient chan interface{}
+
+	// data from other xrtc
+	chanRecvFromRouter chan interface{}
 
 	// admin chan
 	chanAdmin chan interface{}
@@ -48,13 +45,14 @@ type MaxHub struct {
 
 func NewMaxHub() *MaxHub {
 	hub := &MaxHub{
-		TAG:               "[MAXHUB]",
-		connections:       make(map[string]*Connection),
-		clients:           make(map[string]*User),
-		cache:             NewCache(),
-		chanRecvFromOuter: make(chan interface{}, 1000), // unblocking mode, data from udpsvr
-		chanAdmin:         make(chan interface{}, 10),   // data from admin/control
-		exitTick:          make(chan bool),
+		TAG:                "[MAXHUB]",
+		connections:        make(map[string]*Connection),
+		clients:            make(map[string]*User),
+		cache:              NewCache(),
+		chanRecvFromClient: make(chan interface{}, 1000), // data from webrtc udpsvr/tcpsvr
+		chanRecvFromRouter: make(chan interface{}, 1000), // data from other xrtc
+		chanAdmin:          make(chan interface{}, 10),   // data from admin/control
+		exitTick:           make(chan bool),
 	}
 	go hub.Run()
 	return hub
@@ -188,13 +186,18 @@ func (h *MaxHub) OnRecvFromOuter(msg *HubMessage) {
 }
 
 // request from outer (browser clients)
-func (h *MaxHub) ChanRecvFromOuter() chan interface{} {
-	return h.chanRecvFromOuter
+func (h *MaxHub) ChanRecvFromClient() chan interface{} {
+	return h.chanRecvFromClient
 }
 
-func (h *MaxHub) AddServer(server OneServer) {
-	if server != nil {
-		h.servers = append(h.servers, server)
+// request from router (other xrtc)
+func (h *MaxHub) ChanRecvFromRouter() chan interface{} {
+	return h.chanRecvFromRouter
+}
+
+func (h *MaxHub) AddService(service OneService) {
+	if service != nil {
+		h.services = append(h.services, service)
 	}
 }
 
@@ -204,14 +207,14 @@ func (h *MaxHub) Cache() *Cache {
 
 func (h *MaxHub) Candidates() []string {
 	var candidates []string
-	for _, svr := range h.servers {
+	for _, svr := range h.services {
 		candidates = append(candidates, svr.Params().Candidates...)
 	}
 	return candidates
 }
 
 func (h *MaxHub) Close() {
-	for _, svr := range h.servers {
+	for _, svr := range h.services {
 		svr.Close()
 	}
 	h.exitTick <- true
@@ -247,7 +250,7 @@ func (h *MaxHub) loopForOuter(errCh chan error) {
 	quit := false
 	for !quit {
 		select {
-		case msg, ok := <-h.chanRecvFromOuter:
+		case msg, ok := <-h.chanRecvFromClient:
 			if ok {
 				h.OnRecvFromOuter(msg.(*HubMessage))
 			}

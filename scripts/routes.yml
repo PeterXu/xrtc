@@ -1,4 +1,11 @@
 services:
+    srtsv1:
+        proto: srt
+        net:
+            addr: :9527
+            tls_crt_file: /tmp/etc/cert.pem
+            tls_key_file: /tmp/etc/cert.key
+
     httpsvr1:
         proto: http
         net:
