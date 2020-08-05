@@ -5,9 +5,19 @@ import (
 	log "github.com/PeterXu/xrtc/util"
 )
 
+type LinkMode int
+
+const (
+	kLinkUnkown    LinkMode = 0x00
+	kLinkIceTcp             = 0x01
+	kLinkIceDirect          = 0x02
+	kLinkRoute              = 0x04
+)
+
 type User struct {
 	TAG string
 
+	linkMode    LinkMode
 	iceTcp      bool                   // connect with webrtc server by tcp/udp
 	iceDirect   bool                   // forward ice stun between outer and inner
 	connections map[string]*Connection // outer client connections
@@ -23,12 +33,11 @@ type User struct {
 	ctime uint64 // create time
 }
 
-func NewUser(iceTcp, iceDirect bool) *User {
+func NewUser(linkMode LinkMode) *User {
 	now := util.NowMs64()
 	return &User{
 		TAG:         "[USER]",
-		iceTcp:      iceTcp,
-		iceDirect:   iceDirect,
+		linkMode:    linkMode,
 		connections: make(map[string]*Connection),
 		chanSend:    make(chan interface{}, 100),
 		utime:       now,
@@ -56,11 +65,15 @@ func (u *User) getRecvIce() SdpIceJson {
 }
 
 func (u *User) isIceTcp() bool {
-	return u.iceTcp
+	return (u.linkMode & kLinkIceTcp) != 0
 }
 
 func (u *User) isIceDirect() bool {
-	return u.iceDirect
+	return (u.linkMode & kLinkIceDirect) != 0
+}
+
+func (u *User) isLinkRoute() bool {
+	return (u.linkMode & kLinkRoute) != 0
 }
 
 func (u *User) addConnection(conn *Connection) {
@@ -80,7 +93,7 @@ func (u *User) delConnection(conn *Connection) {
 	}
 }
 
-func (u *User) sendToInner(conn *Connection, data []byte) {
+func (u *User) onClientData(conn *Connection, data []byte) {
 	if u.leave {
 		return
 	}
@@ -88,14 +101,14 @@ func (u *User) sendToInner(conn *Connection, data []byte) {
 	u.chanSend <- data
 }
 
-func (u *User) sendToOuter(data []byte) {
+func (u *User) onServerData(data []byte) {
 	if u.leave {
 		return
 	}
 
 	if u.activeConn == nil {
 		for k, v := range u.connections {
-			if v.isReady() {
+			if v.IsReady() {
 				u.activeConn = v
 				log.Println(u.TAG, "choose active conn, id=", k)
 				break
@@ -134,6 +147,11 @@ func (u *User) onAgentClose() {
 }
 
 func (u *User) startAgent(candidates []string) bool {
+	if u.isLinkRoute() {
+		//TODO
+		return true
+	}
+
 	if u.iceAgent != nil {
 		return true
 	}

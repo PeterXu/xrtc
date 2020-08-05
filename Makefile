@@ -4,10 +4,14 @@ VERSION ?= latest
 TARGET_IMG = $(NS)/docker-xrtc
 BUILD_IMG = $(NS)/docker-xrtc-build
 
-HOST_IP ?= "192.168.2.3"
+HOST_ADDR ?= "192.168.2.3"
 PKG_CFG ?= "/usr/local/lib/pkgconfig"
 
 all: build
+
+gen:
+	@protoc --go_out=src proto/route.proto -Iproto
+	@protoc --go_out=src proto/rest.proto -Iproto
 
 build:
 	@PKG_CONFIG_PATH=$(PKG_CFG) go build -ldflags "-s -w"
@@ -34,11 +38,11 @@ docker: build
 	docker build -t $(TARGET_IMG):$(VERSION) -f scripts/Dockerfile .
 
 deploy: 
-	@export candidate_host_ip=$(HOST_IP) && \
+	@export candidate_host_ip=$(HOST_ADDR) && \
 		docker-compose -f scripts/docker-compose.yml up -d
 
 deploy-mac:
-	@export candidate_host_ip=$(HOST_IP) && \
+	@export candidate_host_ip=$(HOST_ADDR) && \
 		docker-compose -f scripts/docker-compose.cross.yml up -d
 	@docker logs -f xrtc-proxy
 

@@ -1,6 +1,7 @@
 package webrtc
 
 import (
+	"fmt"
 	"net"
 
 	log "github.com/PeterXu/xrtc/util"
@@ -11,11 +12,11 @@ var gGeoDB *geoip2.Reader
 
 func init() {
 	db, err := geoip2.Open(kGeoLite2File)
-	if err != nil {
-		log.Warnln(err)
-	} else {
-		log.Println("[geoip]", "load geo db success")
+	if err == nil {
 		gGeoDB = db
+	} else {
+		log.Warnln(err)
+		fmt.Println()
 	}
 }
 

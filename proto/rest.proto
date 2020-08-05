@@ -1,0 +1,53 @@
+syntax = "proto2";
+
+package webrtc;
+
+message RestSdpIce {
+    optional string ufrag = 1;
+    optional string pwd = 2;
+    optional string options = 3;
+}
+
+message RestRacket {
+    optional uint32 version = 1;
+    optional string session_key = 20;
+    optional RestSdpIce offer_ice = 21;
+    optional RestSdpIce answer_ice = 22;
+    repeated string candidates = 23;
+}
+
+/// Rest Board Api
+
+message RestBoardRequest {
+    optional string type = 1;
+    optional RestBoardAction action = 2;
+    optional bool multi_webrtc_conn = 3;
+    optional string agent = 4;  // chrome/firefox
+    optional uint32 version = 5; // browser version
+    optional uint32 webrtc_client_version = 6; // webrtc version
+    optional bool is_ds = 7; // camera/desktop
+    optional string dst_url = 8;
+}
+
+message RestBoardResponse {
+    optional RestBoardAction action = 1;
+    optional string code = 2;
+}
+
+message RestBoardAction {
+    optional string session_key = 1;
+    repeated RestBoardRoster user_roster = 2;
+}
+
+message RestBoardRoster {
+    optional RestBoardStatus audio_status = 1;
+}
+
+message RestBoardStatus {
+    repeated RestBoardChannel channels = 1;
+}
+
+message RestBoardChannel {
+    optional string webrtc_offer = 1;
+    optional string webrtc_answer = 2;
+}

@@ -99,6 +99,17 @@ func SetSocketReuseAddr(sock SocketFD) {
 	}
 }
 
+/// ip tools
+
+func IsGlobalIPV4(ipstr string) bool {
+	if ip := net.ParseIP(ipstr); ip != nil {
+		if ip.IsGlobalUnicast() && (ip.To4() != nil) {
+			return true
+		}
+	}
+	return false
+}
+
 // tries to determine a non-loopback address for local machine
 func LocalIP() (net.IP, error) {
 	addrs, err := net.InterfaceAddrs()
@@ -144,17 +155,9 @@ func LookupIP(host string) string {
 	return hostIp
 }
 
-// format: host/host:port
-func ParseHostPort(addr string) (string, int) {
-	parts := strings.Split(addr, ":")
-	if len(parts) == 1 {
-		return parts[0], 0
-	} else if len(parts) == 2 {
-		return parts[0], Atoi(parts[1])
-	}
-	return "", 0
-}
+/// uri/host tools, ddr format: [proto://]host[:port]
 
+// return ip(dot-dec) of host from addr
 func ParseHostIp(addr string) string {
 	if host, _ := ParseHostPort(addr); len(host) > 0 {
 		return LookupIP(host)
@@ -163,11 +166,36 @@ func ParseHostIp(addr string) string {
 	}
 }
 
-func IsGlobalIPV4(ipstr string) bool {
-	if ip := net.ParseIP(ipstr); ip != nil {
-		if ip.IsGlobalUnicast() && (ip.To4() != nil) {
-			return true
-		}
+// return [host, port]
+func ParseHostPort(addr string) (string, int) {
+	_, host, port := ParseUriAll(addr)
+	return host, port
+}
+
+// return (proto, host[:port])
+func ParseUri(addr string) (string, string) {
+	parts := strings.Split(addr, "://")
+	if len(parts) == 1 {
+		return "", parts[0]
+	} else {
+		return parts[0], parts[1]
 	}
-	return false
+}
+
+// return (proto, host, port)
+func ParseUriAll(addr string) (string, string, int) {
+	proto, hostport := ParseUri(addr)
+	parts := strings.Split(hostport, ":")
+	if len(parts) == 1 {
+		return proto, parts[0], 0
+	} else if len(parts) == 2 {
+		return proto, parts[0], Atoi(parts[1])
+	}
+	return proto, "", 0
+}
+
+// return proto
+func ParseProto(addr string) string {
+	proto, _ := ParseUri(addr)
+	return proto
 }

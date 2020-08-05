@@ -1,2 +1,3 @@
 xrtc
 xrtc.gen
+*.pb.go

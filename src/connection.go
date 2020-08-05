@@ -12,29 +12,30 @@ import (
 const kDefaultConnectionTimeout = 30 * 1000 // ms
 
 type Connection struct {
+	*ObjTime
+	*ObjStatus
+
 	TAG      string
 	addr     net.Addr
 	chanSend chan interface{}
 	user     *User
 
-	ready                  bool
 	stunRequesting         uint64
 	hadStunChecking        bool
 	hadStunBindingResponse bool
 	leave                  bool
-	objtime                *ObjTime
 }
 
 func NewConnection(addr net.Addr, chanSend chan interface{}) *Connection {
 	return &Connection{
+		ObjTime:                NewObjTime(),
+		ObjStatus:              NewObjStatus(),
 		TAG:                    "[CONN]",
 		addr:                   addr,
 		chanSend:               chanSend,
-		ready:                  false,
 		hadStunChecking:        false,
 		hadStunBindingResponse: false,
 		leave:                  false,
-		objtime:                NewObjTime(),
 	}
 }
 
@@ -54,11 +55,11 @@ func (c *Connection) dispose() {
 }
 
 func (c *Connection) isTimeout() bool {
-	return c.objtime.checkTimeout(kDefaultConnectionTimeout)
+	return c.CheckTimeout(kDefaultConnectionTimeout)
 }
 
 func (c *Connection) onRecvData(data []byte) {
-	c.objtime.update()
+	c.UpdateTime()
 
 	if !c.user.isIceDirect() && util.IsStunPacket(data) {
 		log.Println(c.TAG, "recv stun, len=", len(data))
@@ -79,7 +80,7 @@ func (c *Connection) onRecvData(data []byte) {
 			log.Println(c.TAG, "recv stun binding response")
 			// init and enable srtp
 			c.hadStunBindingResponse = true
-			c.ready = true
+			c.SetReady()
 		case util.STUN_BINDING_ERROR_RESPONSE:
 			log.Warnln(c.TAG, "error stun message")
 		default:
@@ -89,18 +90,14 @@ func (c *Connection) onRecvData(data []byte) {
 		// dtls handshake
 		// rtp/rtcp data to inner
 		//log.Println(c.TAG, "recv dtls/rtp/rtcp, len=", len(data))
-		c.ready = true
-		c.user.sendToInner(c, data)
+		c.SetReady()
+		c.user.onClientData(c, data)
 	}
 }
 
 func (c *Connection) sendData(data []byte) bool {
-	c.chanSend <- NewHubMessage(data, nil, c.addr, nil)
+	c.chanSend <- NewObjMessage(data, nil, c.addr, nil)
 	return true
-}
-
-func (c *Connection) isReady() bool {
-	return c.ready
 }
 
 func (c *Connection) onRecvStunBindingRequest(transId string) {
@@ -155,18 +152,19 @@ func (c *Connection) checkStunBindingRequest() {
 
 	go func() {
 		c.stunRequesting = 500
+	exitLoop:
 		for {
 			select {
 			case <-time.After(time.Millisecond * time.Duration(c.stunRequesting)):
 				if !c.sendStunBindingRequest() {
 					log.Println(c.TAG, "quit stun request interval")
 					c.hadStunChecking = false
-					return
+					break exitLoop
 				}
 
-				if delta := util.NowMs64() - c.objtime.utime; delta >= (15 * 1000) {
+				if delta := util.NowMs64() - c.utime; delta >= (15 * 1000) {
 					log.Warnln(c.TAG, "(timeout) no response from client and quit")
-					return
+					break exitLoop
 				} else if delta > (5 * 1000) {
 					log.Println(c.TAG, "adjust stun request interval")
 					c.stunRequesting = delta / 2

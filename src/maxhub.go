@@ -9,23 +9,12 @@ import (
 	log "github.com/PeterXu/xrtc/util"
 )
 
-type HubMessage struct {
-	data []byte
-	from net.Addr
-	to   net.Addr
-	misc interface{}
-}
-
-func NewHubMessage(data []byte, from net.Addr, to net.Addr, misc interface{}) *HubMessage {
-	return &HubMessage{data, from, to, misc}
-}
-
 type MaxHub struct {
 	TAG string
 
 	connections map[string]*Connection
 	clients     map[string]*User
-	services    []OneService
+	services    []Service
 
 	// cache control
 	cache *Cache
@@ -58,7 +47,7 @@ func NewMaxHub() *MaxHub {
 	return hub
 }
 
-func (h *MaxHub) OnAdminData(msg *HubMessage) {
+func (h *MaxHub) OnAdminData(msg *ObjMessage) {
 }
 
 func (h *MaxHub) findConnection(addr net.Addr) *Connection {
@@ -97,20 +86,25 @@ func (h *MaxHub) handleStunBindingRequest(data []byte, addr net.Addr, misc inter
 
 		user, ok := h.clients[stunName]
 		if !ok {
-			var request *RouteJson
+			var info *RouteInfo
 			if item := h.cache.Get(stunName); item != nil {
-				if info, ok := item.data.(*RouteJson); ok {
-					request = info
+				if tmp, ok := item.data.(*RouteInfo); ok {
+					info = tmp
 				}
 			}
-			if request == nil {
+			if info == nil {
 				log.Warnln(h.TAG, "invalid ice for user")
 				return
 			}
-			iceTcp := false
-			iceDirect := true
-			user = NewUser(iceTcp, iceDirect)
-			if !user.setIceInfo(&request.OfferIce, &request.AnswerIce, request.Candidates) {
+			linkMode := kLinkUnkown
+			if info.byRoute {
+				linkMode += kLinkRoute
+			} else {
+				//linkMode += kLinkIceTcp
+				linkMode += kLinkIceDirect
+			}
+			user = NewUser(linkMode)
+			if !user.setIceInfo(&info.OfferIce, &info.AnswerIce, info.Candidates) {
 				log.Warnln(h.TAG, "invalid ice for user")
 				return
 			}
@@ -169,7 +163,7 @@ func (h *MaxHub) clearUsers() {
 	}
 }
 
-func (h *MaxHub) OnRecvFromOuter(msg *HubMessage) {
+func (h *MaxHub) OnRecvFromClient(msg *ObjMessage) {
 	// 1. stun request/response
 	// 2. dtls handshake(key)
 	// 3. sctp create/srtp init
@@ -190,12 +184,15 @@ func (h *MaxHub) ChanRecvFromClient() chan interface{} {
 	return h.chanRecvFromClient
 }
 
+func (h *MaxHub) OnRecvFromRouter(msg *ObjMessage) {
+}
+
 // request from router (other xrtc)
 func (h *MaxHub) ChanRecvFromRouter() chan interface{} {
 	return h.chanRecvFromRouter
 }
 
-func (h *MaxHub) AddService(service OneService) {
+func (h *MaxHub) AddService(service Service) {
 	if service != nil {
 		h.services = append(h.services, service)
 	}
@@ -208,7 +205,7 @@ func (h *MaxHub) Cache() *Cache {
 func (h *MaxHub) Candidates() []string {
 	var candidates []string
 	for _, svr := range h.services {
-		candidates = append(candidates, svr.Params().Candidates...)
+		candidates = append(candidates, svr.Candidates()...)
 	}
 	return candidates
 }
@@ -228,17 +225,17 @@ func (h *MaxHub) Run() {
 
 	go h.loopForOuter(errCh)
 
-	quit := false
-	for !quit {
+exitLoop:
+	for {
 		select {
 		case msg, ok := <-h.chanAdmin:
 			if ok {
-				h.OnAdminData(msg.(*HubMessage))
+				h.OnAdminData(msg.(*ObjMessage))
 			}
 		case <-h.exitTick:
-			quit = true
 			errCh <- nil
 			log.Println(h.TAG, "Run exit...")
+			break exitLoop
 		}
 	}
 	log.Println(h.TAG, "Run end")
@@ -247,18 +244,22 @@ func (h *MaxHub) Run() {
 func (h *MaxHub) loopForOuter(errCh chan error) {
 	tickChan := time.NewTicker(time.Second * 30).C
 
-	quit := false
-	for !quit {
+exitLoop:
+	for {
 		select {
 		case msg, ok := <-h.chanRecvFromClient:
 			if ok {
-				h.OnRecvFromOuter(msg.(*HubMessage))
+				h.OnRecvFromClient(msg.(*ObjMessage))
+			}
+		case msg, ok := <-h.chanRecvFromRouter:
+			if ok {
+				h.OnRecvFromRouter(msg.(*ObjMessage))
 			}
 		case <-tickChan:
 			h.clearConnections()
 			h.clearUsers()
 		case <-errCh:
-			quit = true
+			break exitLoop
 		}
 	}
 }

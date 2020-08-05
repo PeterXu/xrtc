@@ -13,6 +13,10 @@ import (
 )
 
 type IceAgent struct {
+	*ObjTime
+	*ObjStatus
+	*NetHandler
+
 	TAG   string
 	agent *nice.Agent
 	user  *User
@@ -22,23 +26,15 @@ type IceAgent struct {
 	iceOutChan chan []byte
 	iceCands   []util.Candidate
 	remoteAddr net.Addr
-
-	ready    bool
-	stat     *NetStat
-	chanRecv chan interface{}
-	exitTick chan bool
-	objtime  *ObjTime
 }
 
 func NewIceAgent(user *User, chanRecv chan interface{}) *IceAgent {
 	return &IceAgent{
-		TAG:      "[SERVICE]",
-		ready:    false,
-		user:     user,
-		stat:     NewNetStat(0, 0),
-		chanRecv: chanRecv,
-		exitTick: make(chan bool),
-		objtime:  NewObjTime(),
+		ObjTime:    NewObjTime(),
+		ObjStatus:  NewObjStatus(),
+		NetHandler: NewNetHandler(),
+		TAG:        "[ICE-AGENT]",
+		user:       user,
 	}
 }
 
@@ -87,18 +83,18 @@ func (s *IceAgent) Init(ufrag, pwd, remote string) bool {
 }
 
 func (s *IceAgent) onRecvData(data []byte) {
-	s.stat.updateRecv(len(data))
-	s.user.sendToOuter(data)
+	s.netStat.UpdateRecv(len(data))
+	s.user.onServerData(data)
 }
 
 // sendData sends stun/dtls/srtp/srtcp packets to inner(webrtc server)
 func (s *IceAgent) sendData(data []byte) {
-	if !s.ready {
+	if !s.IsReady() {
 		log.Warnln(s.TAG, "inner not ready")
 		return
 	}
 
-	s.stat.updateSend(len(data))
+	s.netStat.UpdateSend(len(data))
 	if s.agent != nil {
 		s.agent.Send(data)
 	} else {
@@ -130,7 +126,7 @@ func (s *IceAgent) dataChannel() chan []byte {
 	if s.agent != nil {
 		return s.agent.DataChannel
 	} else {
-		if !s.ready {
+		if !s.IsReady() {
 			return nil
 		}
 		return s.iceInChan
@@ -165,8 +161,8 @@ func (s *IceAgent) dispose() {
 }
 
 func (s *IceAgent) ChanRecv() chan interface{} {
-	if s.ready {
-		return s.chanRecv
+	if s.IsReady() {
+		return s.chanFeed
 	}
 	return nil
 }
@@ -210,11 +206,11 @@ func (s *IceAgent) iceLoop(retCh chan error) {
 		}
 
 		log.Println(s.TAG, "connect ok to", cand.Transport, addr)
-		s.ready = true
+		s.SetReady()
 		break
 	}
 
-	if !s.ready {
+	if !s.IsReady() {
 		log.Warnln(s.TAG, "fail conn for ice")
 		retCh <- errors.New("ice to server failed")
 		return
@@ -242,9 +238,7 @@ func (s *IceAgent) iceLoop(retCh chan error) {
 			//log.Println(s.TAG, "read loop, isTcp:", isTcp, nret)
 			if err == nil {
 				if nret > 0 {
-					data := make([]byte, nret)
-					copy(data, rbuf[0:nret])
-					s.iceInChan <- data
+					s.iceInChan <- util.Clone(rbuf[0:nret])
 				} else {
 					log.Warnln(s.TAG, "read data nothing")
 				}
@@ -256,8 +250,8 @@ func (s *IceAgent) iceLoop(retCh chan error) {
 	}(errCh)
 
 	// write loop
-	quit := false
-	for !quit {
+exitLoop:
+	for {
 		select {
 		case data := <-s.iceOutChan:
 			var nb int
@@ -274,8 +268,8 @@ func (s *IceAgent) iceLoop(retCh chan error) {
 				_ = nb
 			}
 		case err := <-errCh:
-			quit = true
 			log.Warnln(s.TAG, "read data err:", err)
+			break exitLoop
 		}
 	}
 
@@ -290,8 +284,8 @@ func (s *IceAgent) Run() {
 
 	tickChan := time.NewTicker(time.Second * 10).C
 
-	quit := false
-	for !quit {
+exitLoop:
+	for {
 		select {
 		case msg, ok := <-s.ChanRecv():
 			if ok {
@@ -300,8 +294,8 @@ func (s *IceAgent) Run() {
 					s.sendData(data)
 				}
 			} else {
-				quit = true
 				log.Println(s.TAG, "close chanRecv")
+				break exitLoop
 			}
 		case cand := <-s.candidateChannel():
 			//log.Println(s.TAG, "agent candidate:", cand)
@@ -315,17 +309,17 @@ func (s *IceAgent) Run() {
 			} else if e.Event == nice.EventStateChanged {
 				switch e.State {
 				case nice.EventStateNiceDisconnected:
-					s.ready = false
+					s.SetClose()
 					log.Println(s.TAG, "agent ice disconnected")
-					quit = true
+					break exitLoop
 				case nice.EventStateNiceConnected:
-					s.ready = true
+					s.SetReady()
 					log.Println(s.TAG, "agent ice connected")
 				case nice.EventStateNiceReady:
-					s.ready = true
+					s.SetReady()
 					log.Println(s.TAG, "agent ice ready")
 				default:
-					s.ready = false
+					s.SetClose()
 					log.Println(s.TAG, "agent ice state:", e.State)
 				}
 			} else {
@@ -336,11 +330,11 @@ func (s *IceAgent) Run() {
 			//log.Println(s.TAG, "agent received:", len(d))
 			s.onRecvData(d)
 		case <-tickChan:
-			if !s.stat.checkTimeout(5000) {
-				log.Print2f(s.TAG, "agent[%s] stat - %s\n", agentKey, s.stat)
+			if !s.netStat.CheckTimeout(5000) {
+				log.Print2f(s.TAG, "agent[%s] stat - %s\n", agentKey, s.netStat)
 			}
 		case <-s.exitTick:
-			quit = true
+			break exitLoop
 		}
 	}
 

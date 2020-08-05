@@ -1,9 +1,8 @@
 package webrtc
 
 import (
+	"errors"
 	"fmt"
-	"net"
-	"strings"
 
 	"github.com/PeterXu/xrtc/util"
 	log "github.com/PeterXu/xrtc/util"
@@ -11,19 +10,130 @@ import (
 )
 
 const (
-	uTAG               = "[CONFIG]"
-	kDefaultServerName = "_"
-	kDefaultServerRoot = "/tmp"
-	kDefaultConfig     = "/tmp/etc/routes.yml"
-	kTlsCrtFile        = "/tmp/etc/cert.pem"
-	kTlsKeyFile        = "/tmp/etc/cert.key"
-	kGeoLite2File      = "/tmp/etc/GeoLite2-City.mmdb"
-	kCandidateIpMark   = "candidate_host_ip"
+	uTAG                 = "[CONFIG]"
+	kDefaultServerName   = "_"
+	kDefaultServerRoot   = "/tmp"
+	kDefaultConfig       = "/tmp/etc/routes.yml"
+	kTlsCrtFile          = "/tmp/etc/cert.pem"
+	kTlsKeyFile          = "/tmp/etc/cert.key"
+	kGeoLite2File        = "/tmp/etc/GeoLite2-City.mmdb"
+	kRoutePublicHostMark = "route_public_host_ip"
+	kRouteInitAddrMark   = "route_init_addr"
+	kCandidateHostMark   = "candidate_host_ip"
 )
 
-// Config contains all services(udp/tcp/http)
+/// load config parameters.
+func LoadConfig(fname string) *Config {
+	config := NewConfig()
+	if !config.Load(fname) {
+		log.Fatal(uTAG, "read config failed:", fname)
+		return nil
+	}
+	return config
+}
+
+/// hase config
+
+type CommonConfig struct {
+	Id      string
+	Name    string
+	CrtFile string
+	KeyFile string
+}
+
+func NewCommonConfig() *CommonConfig {
+	return &CommonConfig{}
+}
+
+func (bc *CommonConfig) Load(service yaml.Map) error {
+	bc.Id = getYamlString(service, "id")
+	if len(bc.Id) == 0 {
+		bc.Id = util.SysUniqueId()
+	}
+	bc.Name = getYamlString(service, "name")
+	if len(bc.Name) == 0 {
+		bc.Name = util.SysHostname()
+	}
+	bc.CrtFile = getYamlString(service, "crt_file")
+	if len(bc.CrtFile) == 0 {
+		bc.CrtFile = kTlsCrtFile
+	}
+	bc.KeyFile = getYamlString(service, "key_file")
+	if len(bc.KeyFile) == 0 {
+		bc.KeyFile = kTlsKeyFile
+	}
+	return nil
+}
+
+func (bc CommonConfig) String() string {
+	return fmt.Sprintf("Common{Id: %s, Name: %s, CrtKey: {%s,%s}}",
+		bc.Id, bc.Name, bc.CrtFile, bc.KeyFile)
+}
+
+/// mod config
+
+type ModConfig struct {
+	Common *CommonConfig
+	Mod    string
+	Name   string
+	Addrs  []string        // "proto://host:port"
+	Route  *RouteNetParams // for srt/..
+	Ice    *IceNetParams   // for udp/tcp
+	Rest   *RestNetParams  // for http/ws
+}
+
+func NewModConfig(mod string) *ModConfig {
+	return &ModConfig{
+		Mod: mod,
+	}
+}
+
+func (mc *ModConfig) Load(service yaml.Map) error {
+	mc.Name = getYamlString(service, "name")
+	if len(mc.Name) == 0 {
+		return errors.New("no mod name")
+	}
+	mc.Addrs = getYamlListString(service, "addrs")
+	if len(mc.Addrs) == 0 {
+		return errors.New("no mod addrs")
+	}
+
+	var err error
+	switch mc.Mod {
+	case "route":
+		mc.Route = &RouteNetParams{}
+		err = mc.Route.Load(service, mc.Addrs)
+	case "ice":
+		mc.Ice = &IceNetParams{}
+		err = mc.Ice.Load(service, mc.Addrs)
+	case "rest":
+		mc.Rest = &RestNetParams{}
+		err = mc.Rest.Load(service)
+	default:
+		err = errors.New("unsupported mod=" + mc.Mod)
+	}
+	return err
+}
+
+func (mc ModConfig) String() string {
+	mod := fmt.Sprintf("{Name: %s, Mod: %s, Addrs: %v}",
+		mc.Name, mc.Mod, mc.Addrs)
+	var extend string
+	switch mc.Mod {
+	case "route":
+		extend = fmt.Sprintf(" Route{%s}", mc.Route)
+	case "ice":
+		extend = fmt.Sprintf(" Ice{%s}", mc.Ice)
+	case "rest":
+		extend = fmt.Sprintf(" Rest{%s}", mc.Rest)
+	}
+	return mod + extend
+}
+
+/// Config
+
 type Config struct {
-	Services []*NetConfig
+	configs []*ModConfig
 }
 
 func NewConfig() *Config {
@@ -45,63 +155,49 @@ func (c *Config) Load(fname string) bool {
 		log.Error(uTAG, "check root, err=", err)
 		return false
 	} else {
-		if services, err = yaml.ToMap(root.Key("services")); err != nil {
+		if services, err = getYamlMap(root, "services"); err != nil {
 			log.Error(uTAG, "check services, err=", err)
 			return false
 		}
 	}
 
 	// Check services
-	for _, key := range yaml.Keys(services) {
-		service, err := yaml.ToMap(services.Key(key))
+	var commonCfg *CommonConfig
+	for _, mod := range yaml.Keys(services) {
+		service, err := getYamlMap(services, mod)
 		if err != nil {
-			log.Warn(uTAG, "check service [", key, "], err=", err)
-			continue
+			log.Warn2f(uTAG, "check service [%s], err=%v", mod, err)
+			return false
 		}
 
-		var proto yaml.Scalar
-		if proto, err = yaml.ToScalar(service.Key("proto")); err != nil {
-			log.Warn(uTAG, "check service proto, err=", err)
-			continue
-		}
+		log.Print2f(uTAG, ">>>parse service mod [%s]", mod)
 
-		log.Println(uTAG, "parse service:", key, ", proto:", proto)
-
-		var netParam yaml.Map
-		if netParam, err = yaml.ToMap(service.Key("net")); err != nil {
-			log.Warn(uTAG, "check service net, err=", err)
-			continue
-		}
-
-		netProto := strings.ToLower(proto.String())
-		switch netProto {
-		case "srt":
-			svr := NewNetConfig(key, netProto, netParam)
-			c.Services = append(c.Services, svr)
-		case "udp":
-			svr := NewNetConfig(key, netProto, netParam)
-			c.Services = append(c.Services, svr)
-		case "tcp":
-			svr := NewNetConfig(key, netProto, netParam)
-			enableHttp := yaml.ToString(service.Key("enable_http"))
-			//log.Println(uTAG, "check tcp's enable_http=", enableHttp)
-			svr.EnableHttp = (enableHttp == "true")
-			if svr.EnableHttp {
-				if httpp, err := yaml.ToMap(service.Key("http")); err == nil {
-					svr.Http.Load(httpp)
-				}
+		if mod == "base" {
+			cfg := NewCommonConfig()
+			if err := cfg.Load(service); err != nil {
+				log.Warn2f(uTAG, "check service [%s], err=%v", mod, err)
+				return false
 			}
-			c.Services = append(c.Services, svr)
-		case "http":
-			svr := NewNetConfig(key, netProto, netParam)
-			svr.EnableHttp = true
-			if httpp, err := yaml.ToMap(service.Key("http")); err == nil {
-				svr.Http.Load(httpp)
-			}
-			c.Services = append(c.Services, svr)
-		default:
-			log.Warn(uTAG, "skip unsupported proto=", proto)
+			commonCfg = cfg
+			continue
 		}
+
+		cfg := NewModConfig(mod)
+		if err := cfg.Load(service); err != nil {
+			log.Warn2f(uTAG, "check service mod [%s], err=[%v]", mod, err)
+			return false
+		}
+
+		c.configs = append(c.configs, cfg)
+	}
+	fmt.Println()
+
+	if commonCfg != nil {
+		log.Println(uTAG, "detail:", commonCfg)
+	}
+	for _, cfg := range c.configs {
+		log.Println(uTAG, "detail:", cfg)
+		cfg.Common = commonCfg
 		fmt.Println()
 	}
 	fmt.Println()
@@ -109,103 +205,159 @@ func (c *Config) Load(fname string) bool {
 	return true
 }
 
-// Net basic params
-type NetParams struct {
-	Addr       string   // "host:port"
-	TlsCrtFile string   // crt file
-	TlsKeyFile string   // key file
-	EnableIce  bool     // enable ice
-	Candidates []string // ice candidates(check EnableIce)
+// Net params
+
+type RouteNetParams struct {
+	Location     string
+	Capacity     uint32
+	_PublicHosts []string // "host"
+	PublicAddrs  []string // TODO: "proto://host:port"
+	_InitAddrs   []string //
+	InitAddrs    []string // TODO: "proto://host:port"
 }
 
-// Load the "net:" parameters under one service.
-func (n *NetParams) Load(node yaml.Map, proto string) {
-	n.Addr = yaml.ToString(node.Key("addr"))
-	n.TlsCrtFile = yaml.ToString(node.Key("tls_crt_file"))
-	n.TlsKeyFile = yaml.ToString(node.Key("tls_key_file"))
-
-	n.EnableIce = (yaml.ToString(node.Key("enable_ice")) == "true")
-	for n.EnableIce {
-		var port string
-		var err error
-		if _, port, err = net.SplitHostPort(n.Addr); err != nil {
-			log.Warnln(uTAG, "wrong net addr:", n.Addr, err)
-			break
-		}
-		var ips yaml.List
-		if ips, err = yaml.ToList(node.Key("candidate_ips")); err != nil {
-			break
-		}
-		for idx, ip := range ips {
-			szip0 := yaml.ToString(ip)
-			if len(szip0) == 0 {
-				continue
-			}
-			var szip string
-			if szip0 == kCandidateIpMark {
-				szip = util.LocalIPString()
-			} else {
-				szip = util.LookupIP(szip0)
-			}
-			log.Println(uTAG, "net candidate_ip: ", szip0, szip)
-
-			var candidate string
-			if proto == "udp" {
-				candidate = fmt.Sprintf("a=candidate:%d 1 udp 2013266431 %s %s typ host",
-					(idx + 1), szip, port)
-			} else if proto == "tcp" {
-				candidate = fmt.Sprintf("a=candidate:%d 1 tcp 1010827775 %s %s typ host tcptype passive",
-					(idx + 1), szip, port)
-			} else {
-				continue
-			}
-			n.Candidates = append(n.Candidates, candidate)
-		}
-		break
-	}
-	log.Println(uTAG, "net params:", n)
+type IceNetParams struct {
+	_CandidateHosts []string
+	Candidates      []string // TODO:ice candidates
 }
 
-/// net config
-
-type NetConfig struct {
-	Name       string
-	Proto      string
-	Net        NetParams
-	EnableHttp bool       // for tcp/http
-	Http       HttpParams // for tcp/http
-}
-
-func NewNetConfig(name, proto string, netp yaml.Map) *NetConfig {
-	cfg := &NetConfig{Name: name, Proto: proto}
-	cfg.Net.Load(netp, cfg.Proto)
-	cfg.Http = kDefaultHttpParams
-	return cfg
-}
-
-/// HttpParams
-
-type HttpParams struct {
+type RestNetParams struct {
 	Servername string // server name
 	Root       string // static root dir
 	RequestID  string
 }
 
-var kDefaultHttpParams = HttpParams{
+var kDefaultHttpParams = RestNetParams{
 	RequestID: "X-Request-Id",
 }
 
-// Load loads the http parameters(routes/..) under a service.
-func (h *HttpParams) Load(node yaml.Map) {
-	h.Servername = yaml.ToString(node.Key("servername"))
+// load the "route:" parameters
+func (n *RouteNetParams) Load(service yaml.Map, addrs []string) error {
+	node, err := getYamlMap(service, "route")
+	if err != nil {
+		return err
+	}
+	n.Location = getYamlString(node, "location")
+	n.Capacity = uint32(yaml.ToInt(node.Key("capacity"), 0))
+
+	n._InitAddrs = getYamlListString(node, "init_addrs")
+	if len(n._InitAddrs) == 0 {
+		return errors.New("no init_addrs")
+	}
+	for _, val := range n._InitAddrs {
+		addr := val
+		if val == kRouteInitAddrMark {
+			szip := util.LocalIPString()
+			addr = fmt.Sprintf("srt://%s:9528", szip)
+		}
+		n.InitAddrs = append(n.InitAddrs, addr)
+		log.Println(uTAG, "init addr: ", val, addr)
+	}
+
+	n._PublicHosts = getYamlListString(node, "public_hosts")
+	if len(n._PublicHosts) == 0 {
+		return errors.New("no public_hosts")
+	}
+	for _, val := range n._PublicHosts {
+		var szip string
+		if val == kRoutePublicHostMark {
+			szip = util.LocalIPString()
+		} else {
+			szip = util.LookupIP(val)
+		}
+		for _, addr := range addrs {
+			proto, _, port := util.ParseUriAll(addr)
+			uri := proto + "://" + szip
+			if port != 0 {
+				uri = uri + ":" + util.Itoa(port)
+			}
+			log.Println(uTAG, "pub addr: ", val, uri)
+			n.PublicAddrs = append(n.PublicAddrs, uri)
+		}
+	}
+	return nil
+}
+
+// load the "ice:" parameters
+func (n *IceNetParams) Load(service yaml.Map, addrs []string) error {
+	node, err := getYamlMap(service, "ice")
+	if err != nil {
+		return err
+	}
+	n._CandidateHosts = getYamlListString(node, "candidate_hosts")
+	if len(n._CandidateHosts) == 0 {
+		return errors.New("no candidate_hosts")
+	}
+	for idx, val := range n._CandidateHosts {
+		var szip string
+		if val == kCandidateHostMark {
+			szip = util.LocalIPString()
+		} else {
+			szip = util.LookupIP(val)
+		}
+		log.Println(uTAG, "net candidate host: ", val, szip)
+		for _, addr := range addrs {
+			proto, _, port := util.ParseUriAll(addr)
+			if port == 0 {
+				return errors.New("wrong net addr:" + addr)
+			}
+			var candidate string
+			switch proto {
+			case "udp":
+				candidate = fmt.Sprintf("a=candidate:%d 1 udp 2013266431 %s %d typ host",
+					(idx + 1), szip, port)
+			case "tcp":
+				candidate = fmt.Sprintf("a=candidate:%d 1 tcp 1010827775 %s %d typ host tcptype passive",
+					(idx + 1), szip, port)
+			default:
+				return errors.New("wrong proto=" + proto)
+			}
+			if len(candidate) > 0 {
+				n.Candidates = append(n.Candidates, candidate)
+			}
+		}
+	}
+	return nil
+}
+
+// loads the "rest:" parameters
+func (h *RestNetParams) Load(service yaml.Map) error {
+	node, err := getYamlMap(service, "rest")
+	if err != nil {
+		return err
+	}
+
+	h.Servername = getYamlString(node, "servername")
 	if len(h.Servername) == 0 {
 		h.Servername = kDefaultServerName
 	}
 
-	h.Root = yaml.ToString(node.Key("root"))
+	h.Root = getYamlString(node, "root")
 	if len(h.Root) == 0 {
 		h.Root = kDefaultServerRoot
 	}
+	return nil
+}
 
-	log.Println(uTAG, "http parameters:", h)
+/// misc tools
+
+func getYamlMap(node yaml.Map, key string) (yaml.Map, error) {
+	return yaml.ToMap(node.Key(key))
+}
+
+func getYamlString(node yaml.Map, key string) string {
+	return yaml.ToString(node.Key(key))
+}
+
+func getYamlListString(node yaml.Map, key string) []string {
+	var results []string
+	if items, err := yaml.ToList(node.Key(key)); err == nil {
+		for _, item := range items {
+			tmp := yaml.ToString(item)
+			if len(tmp) > 0 {
+				results = append(results, tmp)
+			}
+		}
+	}
+	return results
 }

@@ -13,29 +13,35 @@ import (
 )
 
 type HttpServer struct {
-	OneServer
-
-	ln   net.Listener
-	pool *util.GoPool
+	TAG   string
+	owner ServiceOwner
+	addr  string
+	ln    net.Listener
+	pool  *util.GoPool
 }
 
 // http server (http/https/ws/wss)
-func NewHttpServer(hub *MaxHub, cfg *NetConfig) *HttpServer {
+func NewHttpServer(owner ServiceOwner, addr string) *HttpServer {
 	const TAG = "[HTTP]"
-
-	log.Println(TAG, "listen http on:", cfg.Net.Addr)
-	l, err := net.Listen("tcp", cfg.Net.Addr)
+	log.Println(TAG, "listen http on:", addr)
+	l, err := net.Listen("tcp", addr)
 	if err != nil {
-		log.Fatal(TAG, "listen error=", err)
+		log.Fatal(TAG, "listen http error=", err)
 		return nil
 	}
 	svr := &HttpServer{
-		ln:   l,
-		pool: util.NewGoPool(1024),
+		TAG:   TAG,
+		owner: owner,
+		addr:  addr,
+		ln:    l,
+		pool:  util.NewGoPool(1024),
 	}
-	svr.Init(TAG, hub, cfg)
 	go svr.Run()
 	return svr
+}
+
+func (s *HttpServer) Close() {
+	//s.ln.Close()
 }
 
 func (s *HttpServer) Run() {
@@ -49,7 +55,7 @@ func (s *HttpServer) Run() {
 		conn, err := s.ln.Accept()
 		if err != nil {
 			log.Warnln(s.TAG, "accept error=", err)
-			return
+			break
 		}
 
 		if ne, ok := err.(net.Error); ok && ne.Temporary() {
@@ -67,39 +73,35 @@ func (s *HttpServer) Run() {
 		}
 		tempDelay = 0
 
-		handler := NewHttpHandler(s, conn)
+		handler := NewHttpHandler(s.TAG, s.owner, conn)
 		s.pool.Schedule(handler.Run)
 	}
-}
-
-func (s *HttpServer) Close() {
-	//s.ln.Close()
 }
 
 /// http handler
 
 type HttpHandler struct {
-	TAG  string
-	svr  *HttpServer
-	conn *util.NetConn
+	TAG   string
+	owner ServiceOwner
+	conn  *util.NetConn
 }
 
-func NewHttpHandler(svr *HttpServer, conn net.Conn) *HttpHandler {
+func NewHttpHandler(TAG string, owner ServiceOwner, conn net.Conn) *HttpHandler {
 	return &HttpHandler{
-		TAG:  svr.TAG,
-		svr:  svr,
-		conn: util.NewNetConn(conn),
+		TAG:   TAG,
+		owner: owner,
+		conn:  util.NewNetConn(conn),
 	}
 }
 
 func (h *HttpHandler) Run() {
-	if !h.Process() {
+	if !h.serveHTTP() {
 		// Close here only when failed
 		h.conn.Close()
 	}
 }
 
-func (h *HttpHandler) Process() bool {
+func (h *HttpHandler) serveHTTP() bool {
 	kClientHello := util.SslClientHello
 	kClientLen := len(util.SslClientHello)
 	kServerHello := util.SslServerHello
@@ -132,7 +134,7 @@ func (h *HttpHandler) Process() bool {
 
 	if isSsl {
 		//log.Println(s.TAG, "setup tls key/cert for", h.conn.RemoteAddr())
-		cer, err := tls.LoadX509KeyPair(h.svr.GetSslFile())
+		cer, err := tls.LoadX509KeyPair(h.owner.GetSslFile())
 		if err != nil {
 			log.Warn2f(h.TAG, "load tls key/cert err: %v", err)
 			return false
@@ -154,7 +156,7 @@ func (h *HttpHandler) Process() bool {
 	//log.Println(h.TAG, "setup http/https for", h.conn.RemoteAddr())
 	http.Serve(
 		NewHttpListener(h.TAG, h.conn),
-		NewHttpServeHandler(h.svr.config.Name, &h.svr.config.Http),
+		NewHttpServeHandler(h.owner.Name(), h.owner.RestParams()),
 	)
 	//log.Println(h.TAG, "setup success")
 	return true

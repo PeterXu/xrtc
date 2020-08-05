@@ -210,7 +210,7 @@ services:
       tls_crt_file: /tmp/etc/cert.pem
       tls_key_file: /tmp/etc/cert.key
       enable_ice: true
-      candidate_ips:
+      candidate_hosts:
         - candidate_host_ip
     enable_http: true
     http:
@@ -232,7 +232,7 @@ The server's fields contains:
 	* ***tls\_crt\_file***: local crt file(openssl)
 	* ***tls\_key\_file***: local key file(openssl)
 	* ***enable_ice***: *true/false*, enable ice service, only valid for `proto: udp/tcp`.
-	* ***candidate_ips***: server ICE candidate ip/host address, only valid for `proto: udp/tcp`
+	* ***candidate_hosts***: server ICE candidate ip/host address, only valid for `proto: udp/tcp`
 	
 	The `enable` is only valid for `proto: udp/tcp`, for ICE candidates.  
 	The `tls_crt_file/tls_key_file` is only valid for `proto: udp/tcp`.  

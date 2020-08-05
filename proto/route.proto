@@ -1,0 +1,47 @@
+syntax = "proto2";
+
+package webrtc;
+
+enum RouteDataType {
+    RouteDataNone = 0;
+    RouteDataRtp = 1;
+    RouteDataRtcp = 2;
+    RouteDataChannel = 3; // data-channel
+    RouteDataInit = 20;
+    RouteDataInitAck = 21;
+    RouteDataCheck = 22;
+    RouteDataCheckAck = 23;
+    RouteDataChain = 24;
+}
+
+message RouteDataNode {
+    optional string id = 1;
+    optional string name = 2;
+    repeated string addr_list = 10;
+    optional uint32 rtt = 20;
+    optional uint32 bwe_in = 21;
+    optional uint32 bwe_out = 22;
+    optional uint32 load = 23;
+    optional uint32 capacity = 24;
+    optional string location = 30;
+}
+
+message RouteDataRtt {
+    optional uint32 rtt = 1;
+    optional uint64 req_time = 10;
+    optional uint64 delta = 11;
+}
+
+message RoutePacket {
+    optional uint32 version = 1;
+    optional string fromId = 2;
+    optional string toId = 3;
+    optional uint32 seqNo = 4;
+    optional uint32 ttl = 5;
+    optional RouteDataType type = 10;
+    optional string akey = 20;
+    optional bytes payload = 30;
+    optional RouteDataRtt rtt = 40;
+    optional RouteDataNode node = 50;
+    repeated RouteDataNode nodes = 51;
+}

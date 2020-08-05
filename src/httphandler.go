@@ -46,6 +46,11 @@ type RouteJson struct {
 	Candidates []string   `json:"candidates"` // server-candidates
 }
 
+type RouteInfo struct {
+	RouteJson
+	byRoute bool
+}
+
 // client recv response from proxy.
 //  if recv server candidates, client will connect to media server directly,
 //  if recv proxy candidates, client will connect to proxy, and proxy to media server.
@@ -97,14 +102,14 @@ type HttpServerHandler struct {
 
 	Name string
 
-	Config HttpParams
+	Config RestNetParams
 
 	// UUID returns a unique id in uuid format.
 	// If UUID is nil, uuid.NewUUID() is used.
 	UUID func() string
 }
 
-func NewHttpServeHandler(name string, cfg *HttpParams) http.Handler {
+func NewHttpServeHandler(name string, cfg *RestNetParams) http.Handler {
 	return &HttpServerHandler{
 		TAG:    "[HTTP]",
 		Name:   name,
@@ -318,8 +323,9 @@ func (p *HttpServerHandler) handleCandidates(srcAddr string, route RouteJson) []
 		candidates = proxyCands
 
 		// add to proxy cache for processing
-		item := NewCacheItem(&route)
-		key := route.AnswerIce.Ufrag + ":" + route.OfferIce.Ufrag
+		info := &RouteInfo{route, false}
+		item := NewCacheItem(info)
+		key := info.AnswerIce.Ufrag + ":" + info.OfferIce.Ufrag
 		Inst().Cache().Set(key, item)
 	} else {
 		// use server-candidaates: client -> server

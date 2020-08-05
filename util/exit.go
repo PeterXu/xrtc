@@ -4,6 +4,7 @@
 package util
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -37,6 +38,7 @@ func AppListen(fn func(os.Signal)) {
 					Println(uTAG, "Caught SIGHUP. Ignoring")
 					continue
 				case os.Interrupt:
+					fmt.Println()
 					Println(uTAG, "Caught SIGINT. Exiting")
 				case syscall.SIGTERM:
 					Println(uTAG, "Caught SIGTERM. Exiting")

@@ -1,42 +1,36 @@
 services:
-    srtsv1:
-        proto: srt
-        net:
-            addr: :9527
-            tls_crt_file: /tmp/etc/cert.pem
-            tls_key_file: /tmp/etc/cert.key
+    common:
+        id: xrtc_id_01
+        name: xrtc01
+        crt_file: /tmp/etc/cert.pem
+        key_file: /tmp/etc/cert.key
 
-    httpsvr1:
-        proto: http
-        net:
-            addr: :6443
-            tls_crt_file: /tmp/etc/cert.pem
-            tls_key_file: /tmp/etc/cert.key
-        http:
+    route:
+        name: routesvr
+        addrs:
+            - srt://:9527
+        route:
+            location: "cn;hefei"
+            capacity: 100
+            public_hosts: 
+              - route_public_host_ip
+            init_addrs:
+              - route_init_addr
+
+    ice:
+        name: icesvr
+        addrs:
+            - tcp://:6080
+            - udp://:6000
+        ice:
+            candidate_hosts:
+              - candidate_host_ip
+
+    rest:
+        name: restsvr
+        addrs:
+            - http://:6443
+        rest:
             servername: _
             root: /tmp/html
-
-    tcpsvr1:
-        proto: tcp
-        net:
-            addr: :6080
-            tls_crt_file: /tmp/etc/cert.pem
-            tls_key_file: /tmp/etc/cert.key
-            enable_ice: true
-            candidate_ips:
-                - candidate_host_ip
-        enable_http: false
-        http:
-            servername: _
-            root: /tmp/html
-
-    udpsvr1:
-        proto: udp
-        net:
-            addr: :6000
-            tls_crt_file: /tmp/etc/cert.pem
-            tls_key_file: /tmp/etc/cert.key
-            enable_ice: true
-            candidate_ips:
-                - candidate_host_ip
 

@@ -8,11 +8,11 @@ import (
 )
 
 type Cache struct {
+	sync.RWMutex
+
 	TAG      string
 	items    map[string]*CacheItem
 	exitTick chan bool
-
-	sync.RWMutex
 }
 
 func NewCache() *Cache {
@@ -29,9 +29,9 @@ func NewCache() *Cache {
 const kDefaultCacheTimeout = 30 * 1000 // ms
 
 type CacheItem struct {
+	*ObjTime
 	data    interface{} //
 	timeout int         // default(30s) if 0
-	objtime *ObjTime
 }
 
 func NewCacheItem(data interface{}) *CacheItem {
@@ -43,9 +43,9 @@ func NewCacheItemEx(data interface{}, timeout int) *CacheItem {
 		timeout = kDefaultCacheTimeout
 	}
 	return &CacheItem{
+		ObjTime: NewObjTime(),
 		data:    data,
 		timeout: timeout,
-		objtime: NewObjTime(),
 	}
 }
 
@@ -53,7 +53,7 @@ func (h *Cache) Get(key string) *CacheItem {
 	h.RLock()
 	defer h.RUnlock()
 	if i, ok := h.items[key]; ok {
-		i.objtime.update()
+		i.UpdateTime()
 		return i
 	} else {
 		return nil
@@ -63,7 +63,7 @@ func (h *Cache) Get(key string) *CacheItem {
 func (h *Cache) Set(key string, item *CacheItem) {
 	h.Lock()
 	defer h.Unlock()
-	item.objtime.update()
+	item.UpdateTime()
 	h.items[key] = item
 }
 
@@ -71,7 +71,7 @@ func (h *Cache) Update(key string) bool {
 	h.Lock()
 	defer h.Unlock()
 	if i, ok := h.items[key]; ok {
-		i.objtime.update()
+		i.UpdateTime()
 		return true
 	} else {
 		return false
@@ -83,7 +83,7 @@ func (h *Cache) ClearTimeout() {
 
 	h.RLock()
 	for k, v := range h.items {
-		if v.objtime.checkTimeout(v.timeout) {
+		if v.CheckTimeout(v.timeout) {
 			desperated = append(desperated, k)
 		}
 	}
@@ -105,12 +105,13 @@ func (h *Cache) Close() {
 
 func (h *Cache) Run() {
 	tickChan := time.NewTicker(time.Second * 30).C
+exitLoop:
 	for {
 		select {
 		case <-h.exitTick:
 			close(h.exitTick)
 			log.Println(h.TAG, "Run exit...")
-			return
+			break exitLoop
 		case <-tickChan:
 			h.ClearTimeout()
 		}
