@@ -12,7 +12,7 @@ import (
 	log "github.com/PeterXu/xrtc/util"
 )
 
-type Service struct {
+type IceAgent struct {
 	TAG   string
 	agent *nice.Agent
 	user  *User
@@ -30,8 +30,8 @@ type Service struct {
 	objtime  *ObjTime
 }
 
-func NewService(user *User, chanRecv chan interface{}) *Service {
-	return &Service{
+func NewIceAgent(user *User, chanRecv chan interface{}) *IceAgent {
+	return &IceAgent{
 		TAG:      "[SERVICE]",
 		ready:    false,
 		user:     user,
@@ -42,7 +42,7 @@ func NewService(user *User, chanRecv chan interface{}) *Service {
 	}
 }
 
-func (s *Service) Init(ufrag, pwd, remote string) bool {
+func (s *IceAgent) Init(ufrag, pwd, remote string) bool {
 	log.Println(s.TAG, "Init begin")
 	if s.user.isIceDirect() {
 		var desc util.MediaDesc
@@ -86,13 +86,13 @@ func (s *Service) Init(ufrag, pwd, remote string) bool {
 	return true
 }
 
-func (s *Service) onRecvData(data []byte) {
+func (s *IceAgent) onRecvData(data []byte) {
 	s.stat.updateRecv(len(data))
 	s.user.sendToOuter(data)
 }
 
 // sendData sends stun/dtls/srtp/srtcp packets to inner(webrtc server)
-func (s *Service) sendData(data []byte) {
+func (s *IceAgent) sendData(data []byte) {
 	if !s.ready {
 		log.Warnln(s.TAG, "inner not ready")
 		return
@@ -110,7 +110,7 @@ func (s *Service) sendData(data []byte) {
 	}
 }
 
-func (s *Service) eventChannel() chan *nice.GoEvent {
+func (s *IceAgent) eventChannel() chan *nice.GoEvent {
 	if s.agent != nil {
 		return s.agent.EventChannel
 	} else {
@@ -118,7 +118,7 @@ func (s *Service) eventChannel() chan *nice.GoEvent {
 	}
 }
 
-func (s *Service) candidateChannel() chan string {
+func (s *IceAgent) candidateChannel() chan string {
 	if s.agent != nil {
 		return s.agent.CandidateChannel
 	} else {
@@ -126,7 +126,7 @@ func (s *Service) candidateChannel() chan string {
 	}
 }
 
-func (s *Service) dataChannel() chan []byte {
+func (s *IceAgent) dataChannel() chan []byte {
 	if s.agent != nil {
 		return s.agent.DataChannel
 	} else {
@@ -137,7 +137,7 @@ func (s *Service) dataChannel() chan []byte {
 	}
 }
 
-func (s *Service) Start() bool {
+func (s *IceAgent) Start() bool {
 	if s.agent != nil {
 		go s.agent.Run()
 	} else {
@@ -154,7 +154,7 @@ func (s *Service) Start() bool {
 	return true
 }
 
-func (s *Service) dispose() {
+func (s *IceAgent) dispose() {
 	log.Println(s.TAG, "dispose begin")
 	if s.agent != nil {
 		s.agent.Destroy()
@@ -164,7 +164,7 @@ func (s *Service) dispose() {
 	log.Println(s.TAG, "dispose end")
 }
 
-func (s *Service) ChanRecv() chan interface{} {
+func (s *IceAgent) ChanRecv() chan interface{} {
 	if s.ready {
 		return s.chanRecv
 	}
@@ -172,7 +172,7 @@ func (s *Service) ChanRecv() chan interface{} {
 }
 
 // iceLoop works when iceDirect is on
-func (s *Service) iceLoop(retCh chan error) {
+func (s *IceAgent) iceLoop(retCh chan error) {
 	var tcpCands []util.Candidate
 	var udpCands []util.Candidate
 	for _, cand := range s.iceCands {
@@ -282,7 +282,7 @@ func (s *Service) iceLoop(retCh chan error) {
 	s.exitTick <- true
 }
 
-func (s *Service) Run() {
+func (s *IceAgent) Run() {
 	log.Println(s.TAG, "Run begin")
 
 	agentKey := s.user.getIceKey()
@@ -344,11 +344,11 @@ func (s *Service) Run() {
 		}
 	}
 
-	s.user.onServiceClose()
+	s.user.onAgentClose()
 	log.Println(s.TAG, "Run end")
 }
 
-func genServiceSdp(ufrag, pwd string, candidates []string) string {
+func genIceAgentSdp(ufrag, pwd string, candidates []string) string {
 	var lines []string
 	lines = append(lines, "m=application")
 	lines = append(lines, "c=IN IP4 0.0.0.0")

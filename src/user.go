@@ -12,7 +12,7 @@ type User struct {
 	iceDirect   bool                   // forward ice stun between outer and inner
 	connections map[string]*Connection // outer client connections
 	chanSend    chan interface{}       // data to inner(server)
-	service     *Service               // inner webrtc server
+	iceAgent    *IceAgent              // inner ice agent (connect to media server)
 
 	leave      bool
 	activeConn *Connection // active conn
@@ -44,7 +44,7 @@ func (u *User) setIceInfo(offerIce, answerIce *SdpIceInfo, candidates []string) 
 	log.Println(u.TAG, "set ice info:", offerIce, answerIce)
 	u.recvIce = *offerIce  // recv from offer(client -> proxy)
 	u.sendIce = *answerIce // send from answer(proxy -> server)
-	return u.startService(candidates)
+	return u.startAgent(candidates)
 }
 
 func (u *User) getSendIce() SdpIceInfo {
@@ -121,33 +121,33 @@ func (u *User) isTimeout() bool {
 func (u *User) dispose() {
 	log.Println(u.TAG, "dispose, connection size=", len(u.connections))
 	u.leave = true
-	if u.service != nil {
-		u.service.dispose()
+	if u.iceAgent != nil {
+		u.iceAgent.dispose()
 	}
 	if len(u.connections) > 0 {
 		u.connections = make(map[string]*Connection)
 	}
 }
 
-func (u *User) onServiceClose() {
+func (u *User) onAgentClose() {
 	u.leave = true
 }
 
-func (u *User) startService(candidates []string) bool {
-	if u.service != nil {
+func (u *User) startAgent(candidates []string) bool {
+	if u.iceAgent != nil {
 		return true
 	}
 
 	sice := u.getRecvIce()
 	rice := u.getSendIce()
-	remoteSdp := genServiceSdp(rice.Ufrag, rice.Pwd, candidates)
-	log.Println(u.TAG, "start service, send/recvIce=", sice, rice, remoteSdp)
+	remoteSdp := genIceAgentSdp(rice.Ufrag, rice.Pwd, candidates)
+	log.Println(u.TAG, "start iceAgent, send/recvIce=", sice, rice, remoteSdp)
 
 	bret := false
-	u.service = NewService(u, u.chanSend)
-	if u.service.Init(sice.Ufrag, sice.Pwd, remoteSdp) {
-		bret = u.service.Start()
+	u.iceAgent = NewIceAgent(u, u.chanSend)
+	if u.iceAgent.Init(sice.Ufrag, sice.Pwd, remoteSdp) {
+		bret = u.iceAgent.Start()
 	}
-	log.Println(u.TAG, "start service ret=", bret)
+	log.Println(u.TAG, "start agent ret=", bret)
 	return bret
 }
