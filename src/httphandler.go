@@ -31,69 +31,32 @@ const (
 )
 
 /// The /webrtc/route api json (default)
+// client send json(with server-candaidates) to proxy.
 
-type SdpIceJson struct {
-	Ufrag   string `json:"ufrag"`
-	Pwd     string `json:"pwd"`
-	Options string `json:"options"`
+func writeToRestSdpIce(to *RestSdpIce, from *util.MediaDesc) {
+	ufrag, pwd, options := from.GetUfrag(), from.GetPwd(), from.GetOptions()
+	to.Ufrag = &ufrag
+	to.Pwd = &pwd
+	to.Options = &options
 }
 
-// client send json(with server-candaidates) to proxy.
-type RouteJson struct {
-	SessionKey string     `json:"session_key,omitempty"`
-	OfferIce   SdpIceJson `json:"offer_ice"`
-	AnswerIce  SdpIceJson `json:"answer_ice"`
-	Candidates []string   `json:"candidates"` // server-candidates
+func writeToSdpIceAttr(to *util.SdpIceAttr, from *RestSdpIce) {
+	ufrag, pwd, options := from.GetUfrag(), from.GetPwd(), from.GetOptions()
+	to.Ufrag = ufrag
+	to.Pwd = pwd
+	to.Options = options
 }
 
 type RouteInfo struct {
-	RouteJson
-	byRoute bool
+	OfferIce   util.SdpIceAttr
+	AnswerIce  util.SdpIceAttr
+	Candidates []string
+	byRoute    bool
 }
 
 // client recv response from proxy.
 //  if recv server candidates, client will connect to media server directly,
 //  if recv proxy candidates, client will connect to proxy, and proxy to media server.
-type RouteResponseJson struct {
-	SessionKey string   `json:"session_key,omitempty"`
-	Candidates []string `json:"candidates"` // returned candidates
-}
-
-/// The webrtc/request api json (desperated)
-
-type RequestChannelJson struct {
-	Offer  string `json:"webrtc_offer,omitempty"`
-	Answer string `json:"webrtc_answer,omitempty"`
-}
-
-type RequestStatusJson struct {
-	Channels []RequestChannelJson `json:"channels"`
-}
-
-type RequestRosterJson struct {
-	Status RequestStatusJson `json:"audio_status"`
-}
-
-type RequestActionJson struct {
-	SessionKey string              `json:"session_key,omitempty"` // confId
-	Rosters    []RequestRosterJson `json:"user_roster"`
-}
-
-type RequestJson struct {
-	Type          string            `json:"type"`
-	Action        RequestActionJson `json:"action"`
-	MultiConn     bool              `json:"multi_webrtc_conn"`
-	Agent         string            `json:"agent"`                 // chrome/firefox
-	Version       int               `json:"version"`               // browser version
-	WebrtcVersion int               `json:"webrtc_client_version"` // webrtc version
-	IsDS          bool              `json:"is_ds,omitempty"`       // camera/ds video
-	DstUrl        string            `json:"dst_url, omitmepty"`
-}
-
-type RequestResponseJson struct {
-	Action RequestActionJson `json:"action"`
-	Code   string            `json:"code"`
-}
 
 /// The http server handler
 
@@ -209,19 +172,19 @@ func (p *HttpServerHandler) sendJson(w http.ResponseWriter, jdata interface{}) e
 
 // process /webrtc/route.
 func (p *HttpServerHandler) handleWebrtcRoute(w http.ResponseWriter, raddr string, body []byte) error {
-	var jreq RouteJson
+	var jreq RestPacket
 	if err := json.Unmarshal(body, &jreq); err != nil {
 		return err
 	}
 
 	log.Println(p.TAG, "http webrtc route=", raddr, jreq)
 
-	candidates := p.handleCandidates(raddr, jreq)
+	candidates := p.handleCandidates(raddr, &jreq)
 	if len(candidates) == 0 {
 		return errors.New("No candidates")
 	}
 
-	jresp := RouteResponseJson{
+	jresp := &RestPacket{
 		SessionKey: jreq.SessionKey,
 		Candidates: candidates,
 	}
@@ -232,7 +195,7 @@ func (p *HttpServerHandler) handleWebrtcRoute(w http.ResponseWriter, raddr strin
 // process /webrtc/request and the flow is: client <--> proxy <--> server.
 func (p *HttpServerHandler) handleWebrtcRequest(w http.ResponseWriter, raddr string, body []byte) error {
 	// parse request
-	var jreq RequestJson
+	var jreq RestBoardRequest
 	if err := json.Unmarshal(body, &jreq); err != nil {
 		return err
 	}
@@ -241,21 +204,21 @@ func (p *HttpServerHandler) handleWebrtcRequest(w http.ResponseWriter, raddr str
 
 	// parse offer which must have 'a=candidate:' lines
 	var offer util.MediaDesc
-	if !offer.Parse([]byte(jreq.Action.Rosters[0].Status.Channels[0].Offer)) {
+	if !offer.Parse([]byte(*jreq.Action.UserRoster[0].AudioStatus.Channels[0].WebrtcOffer)) {
 		return errors.New("Invalid offer")
 	}
 
 	// So request must have 'dst_url' (e.g. url of one media server).
-	if _, err := url.ParseRequestURI(jreq.DstUrl); err != nil {
+	if _, err := url.ParseRequestURI(*jreq.DstUrl); err != nil {
 		return err
 	}
 
 	// generate response
-	var jresp RequestResponseJson
+	var jresp RestBoardResponse
 
 	// send offer to 'dst_url'(media server) which will response with answer.
 	// like a http reverse-proxy
-	if rdata, err := util.HttpSendPost(jreq.DstUrl, body); err == nil {
+	if rdata, err := util.HttpSendPost(*jreq.DstUrl, body); err == nil {
 		if err := json.Unmarshal(rdata, &jresp); err != nil {
 			return err
 		}
@@ -265,32 +228,28 @@ func (p *HttpServerHandler) handleWebrtcRequest(w http.ResponseWriter, raddr str
 
 	// parse answer
 	var answer util.MediaDesc
-	answerBuf := jresp.Action.Rosters[0].Status.Channels[0].Answer
+	answerBuf := jresp.Action.UserRoster[0].AudioStatus.Channels[0].GetWebrtcAnswer()
 	if !answer.Parse([]byte(answerBuf)) {
 		return errors.New("Invalid answer")
 	}
 
 	// parse ICE from offer/answer
-	var regInfo RouteJson
-	regInfo.OfferIce.Ufrag = offer.GetUfrag()
-	regInfo.OfferIce.Pwd = offer.GetPwd()
-	regInfo.OfferIce.Options = offer.GetOptions()
-	regInfo.AnswerIce.Ufrag = answer.GetUfrag()
-	regInfo.AnswerIce.Pwd = answer.GetPwd()
-	regInfo.AnswerIce.Options = answer.GetOptions()
+	var regInfo RestPacket
+	writeToRestSdpIce(regInfo.OfferIce, &offer)
+	writeToRestSdpIce(regInfo.AnswerIce, &answer)
 
 	// parse candidates from offer
 	_, regInfo.Candidates = util.ParseCandidates(offer.GetCandidates())
 
 	// handle to get new candidates
-	candidates := p.handleCandidates(raddr, regInfo)
+	candidates := p.handleCandidates(raddr, &regInfo)
 	if len(candidates) == 0 {
 		return errors.New("No candidates for client-use")
 	}
 
 	// update answer with new candidates and then reply to client
-	newAnswerBuf := util.UpdateSdpCandidates([]byte(answerBuf), candidates)
-	jresp.Action.Rosters[0].Status.Channels[0].Answer = string(newAnswerBuf)
+	newAnswerBuf := string(util.UpdateSdpCandidates([]byte(answerBuf), candidates))
+	jresp.Action.UserRoster[0].AudioStatus.Channels[0].WebrtcAnswer = &newAnswerBuf
 
 	return p.sendJson(w, jresp)
 }
@@ -300,9 +259,9 @@ func (p *HttpServerHandler) handleWebrtcRequest(w http.ResponseWriter, raddr str
 // Current Service will generate candidates for client using:
 //      (a) if new (different with route.Candidates), client will connenct webrtc to one proxy,
 //      (b) if not-new (the same as route.Candidates), client will connect webrtc to media server.
-func (p *HttpServerHandler) handleCandidates(srcAddr string, route RouteJson) []string {
+func (p *HttpServerHandler) handleCandidates(srcAddr string, pkt *RestPacket) []string {
 	// default use original dst-candidates(server)
-	dstCands := route.Candidates
+	dstCands := pkt.Candidates
 
 	proxyCands := Inst().Candidates()
 	if len(proxyCands) == 0 {
@@ -323,7 +282,11 @@ func (p *HttpServerHandler) handleCandidates(srcAddr string, route RouteJson) []
 		candidates = proxyCands
 
 		// add to proxy cache for processing
-		info := &RouteInfo{route, false}
+		info := &RouteInfo{}
+		writeToSdpIceAttr(&info.OfferIce, pkt.OfferIce)
+		writeToSdpIceAttr(&info.AnswerIce, pkt.AnswerIce)
+		info.Candidates = util.CloneArray(pkt.Candidates)
+
 		item := NewCacheItem(info)
 		key := info.AnswerIce.Ufrag + ":" + info.OfferIce.Ufrag
 		Inst().Cache().Set(key, item)

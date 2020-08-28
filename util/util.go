@@ -92,3 +92,11 @@ func Clone(data []byte) []byte {
 	copy(buff, data[0:nret])
 	return buff
 }
+
+func CloneArray(array []string) []string {
+	var newArray []string
+	for _, item := range array {
+		newArray = append(newArray, item)
+	}
+	return newArray
+}

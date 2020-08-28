@@ -151,6 +151,12 @@ func NewMediaAttr(mtype, proto string) *MediaAttr {
 		av_rtpmaps: make(map[string]*RtpMapInfo)}
 }
 
+type SdpIceAttr struct {
+	Ufrag   string
+	Pwd     string
+	Options string
+}
+
 // SDP media attribute lines
 type MediaAttr struct {
 	mtype            string            // m=

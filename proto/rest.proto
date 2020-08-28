@@ -8,7 +8,7 @@ message RestSdpIce {
     optional string options = 3;
 }
 
-message RestRacket {
+message RestPacket {
     optional uint32 version = 1;
     optional string session_key = 20;
     optional RestSdpIce offer_ice = 21;
