@@ -2,6 +2,8 @@ syntax = "proto2";
 
 package webrtc;
 
+/// Rest Api (default)
+
 message RestSdpIce {
     optional string ufrag = 1;
     optional string pwd = 2;

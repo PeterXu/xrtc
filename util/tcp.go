@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"log"
 	"net"
 )
 
@@ -69,17 +70,17 @@ func ReadIceTcpPacket(conn net.Conn, body []byte) (int, error) {
 		nret = -1
 	}
 	if nret != 2 {
-		Warnln("ice-tcp read head fail, err=", err, nret)
+		log.Println("ice-tcp read head fail, err=", err, nret)
 		return 0, errors.New("ice-tcp read head fail(2bytes)")
 	}
 
 	// get body size
 	dsize := HostToNet16(BytesToUint16(head))
 	if dsize == 0 {
-		Warnln("ice-tcp empty body")
+		log.Println("ice-tcp empty body")
 		return 0, nil
 	}
-	//Println("ice-tcp body size:", dsize)
+	//log.Println("ice-tcp body size:", dsize)
 
 	// read body packet
 	rpos := 0
@@ -88,13 +89,13 @@ func ReadIceTcpPacket(conn net.Conn, body []byte) (int, error) {
 		if nret, err = conn.Read(body[rpos : rpos+need]); err == nil {
 			rpos += nret
 		} else {
-			Warnln("ice-tcp read body err:", err)
+			log.Println("ice-tcp read body err:", err)
 			if err == io.EOF {
 				break // end
 			}
 			if nerr := err.(*net.OpError); nerr != nil {
 				if nerr.Timeout() || nerr.Temporary() {
-					Warnln("ice-tcp read clear error:", nerr)
+					log.Println("ice-tcp read clear error:", nerr)
 					err = nil // clear
 				}
 			}

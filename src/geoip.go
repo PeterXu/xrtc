@@ -1,6 +1,7 @@
 package webrtc
 
 import (
+	"errors"
 	"fmt"
 	"net"
 
@@ -11,8 +12,7 @@ import (
 var gGeoDB *geoip2.Reader
 
 func init() {
-	db, err := geoip2.Open(kGeoLite2File)
-	if err == nil {
+	if db, err := geoip2.Open(kGeoLite2File); err == nil {
 		gGeoDB = db
 	} else {
 		log.Warnln(err)
@@ -20,44 +20,59 @@ func init() {
 	}
 }
 
+type GeoLocation struct {
+	City    string
+	Country string
+}
+
+func (loc *GeoLocation) String() string {
+	return fmt.Sprintf("city=%s;country=%s", loc.City, loc.Country)
+}
+
+func parseGeoLocation(ipstr string) (*GeoLocation, error) {
+	if db := gGeoDB; db != nil {
+		if rd, err := db.City(net.ParseIP(ipstr)); err == nil {
+			ct, _ := rd.City.Names["en"]
+			cn, _ := rd.Country.Names["en"]
+			return &GeoLocation{ct, cn}, nil
+		} else {
+			return nil, err
+		}
+	}
+	return nil, errors.New("no geo db")
+}
+
 // The src is client which exists in anywhere.
 // The dst is server which deployed in data-center.
 // The mid is proxy which deployed in data-center.
 //  return false: default and optimal connection: src->dst
 //  return true: change and optimal connections: src->mid->dst
-func checkGeoOptimal(srcIP, midIP, dstIP string) bool {
-	db := gGeoDB
-	if db == nil {
-		return false
-	}
-	srcRd, err := db.City(net.ParseIP(srcIP))
+func checkGeoOptimal(srcIP, proxyIP, dstIP string) bool {
+	srcLoc, err := parseGeoLocation(srcIP)
 	if err != nil {
 		return false
 	}
-	srcCN := srcRd.Country.Names["en"]
 
-	midRd, err := db.City(net.ParseIP(midIP))
+	proxyLoc, err := parseGeoLocation(proxyIP)
 	if err != nil {
 		return false
 	}
-	midCN := midRd.Country.Names["en"]
 
-	dstRd, err := db.City(net.ParseIP(dstIP))
+	dstLoc, err := parseGeoLocation(dstIP)
 	if err != nil {
 		return false
 	}
-	dstCN := dstRd.Country.Names["en"]
 
-	log.Println("[geoip]", srcCN, midCN, dstCN)
+	log.Println("[geoip]", srcLoc, proxyLoc, dstLoc)
 
-	if len(srcCN) == 0 || len(dstCN) == 0 {
+	if len(srcLoc.Country) == 0 || len(dstLoc.Country) == 0 {
 		// maybe src or dst is local ip.
 		// That means: src euqal-to mid, or mid euqal-to dst.
 		// Donot need to change.
 		return false
 	}
 
-	if srcCN != dstCN && srcCN == midCN {
+	if srcLoc.Country != dstLoc.Country && srcLoc.Country == proxyLoc.Country {
 		// a) different country between src and dst,
 		// b) the same country for src and mid,
 		// And the connection of (mid-dst) works better than (src-dst) in general.
@@ -68,6 +83,6 @@ func checkGeoOptimal(srcIP, midIP, dstIP string) bool {
 	return false
 }
 
-func checkGeoHops(srcIP, midIP, dstIP string) bool {
+func checkGeoHops(srcIP, proxyIP, dstIP string) bool {
 	return false
 }

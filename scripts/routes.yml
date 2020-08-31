@@ -10,7 +10,7 @@ services:
         addrs:
             - srt://:9527
         route:
-            location: "cn;hefei"
+            location: "country=cn;city=hefei"
             capacity: 100
             public_hosts: 
               - route_public_host_ip

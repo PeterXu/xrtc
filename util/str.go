@@ -1,5 +1,9 @@
 package util
 
+import (
+	"strings"
+)
+
 func SubString(str string, pos int, size int) string {
 	if pos >= len(str) {
 		return ""
@@ -24,4 +28,12 @@ type IntPair struct {
 
 func (sp StringPair) ToStringBySpace() string {
 	return sp.First + " " + sp.Second
+}
+
+func ParseKeyValue(line string, sp string) *StringPair {
+	attrs := strings.SplitN(line, sp, 2)
+	if len(attrs) == 2 {
+		return &StringPair{attrs[0], attrs[1]}
+	}
+	return nil
 }

@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
+	"log"
 	"reflect"
 	"strconv"
 )
@@ -92,7 +93,7 @@ func BytesToUint64(bytes []byte) uint64 {
 func ValueOrderChange(T interface{}, order binary.ByteOrder) interface{} {
 	bytes := ValueToBytes(T)
 	if bytes == nil {
-		Warnln(uTAG, "invalid bytes in ValueOrderChange")
+		log.Println(uTAG, "invalid bytes in ValueOrderChange")
 		return 0
 	}
 
@@ -103,7 +104,7 @@ func ValueOrderChange(T interface{}, order binary.ByteOrder) interface{} {
 	} else if len(bytes) == 8 {
 		return order.Uint64(bytes[0:])
 	} else {
-		Warnln(uTAG, "invalid length in ValueOrderChange")
+		log.Println(uTAG, "invalid length in ValueOrderChange")
 	}
 	return 0
 }

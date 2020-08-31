@@ -59,113 +59,15 @@ func (s *RouteService) MyId() string {
 func (s *RouteService) MyNode() *RouteDataNode {
 	myId := s.SysId()
 	myName := s.SysName()
+	myLocation := s.RouteParams().Location.String()
 	return &RouteDataNode{
 		Id:       &myId,
 		Name:     &myName,
 		AddrList: nil,
 		Load:     nil,
 		Capacity: &s.RouteParams().Capacity,
-		Location: &s.RouteParams().Location,
+		Location: &myLocation,
 	}
-}
-
-func (s *RouteService) checkStatus() {
-	// remove timeout handler
-	for _, node := range s.nodes {
-		if node.handler != nil && node.handler.CheckTimeout(5*1000) {
-			node.handler.Close()
-			s.closeHandler(node, node.handler)
-		}
-	}
-
-	// send check peridocally
-	for _, node := range s.nodes {
-		if node.handler != nil && node.CheckTimeout(3000) {
-			packet := createRoutePacket(RouteDataType_RouteDataCheck, s.MyId(), node.handler.GetOneSeqNo())
-			if data, err := proto.Marshal(packet); err == nil {
-				node.handler.SendData(data, nil)
-			}
-		}
-	}
-
-	// try to connect initial remotes
-	for _, addr := range s.RouteParams().InitAddrs {
-		break
-		if cli, ok := s.clis[addr]; !ok {
-			if cli = NewSrtClient(s, addr); cli != nil {
-				packet := createRoutePacket(RouteDataType_RouteDataInit, s.MyId(), cli.handler.GetOneSeqNo())
-				packet.Node = s.MyNode()
-				if data, err := proto.Marshal(packet); err == nil {
-					cli.handler.SendData(data, nil)
-				}
-				s.clis[addr] = cli
-			} else {
-				log.Warnln(s.TAG, "fail to connect with "+addr)
-			}
-		}
-	}
-}
-
-func (s *RouteService) closeHandler(node *NodeInfo, handler ServiceHandler) {
-	if node == nil {
-		for _, val := range s.nodes {
-			if val.handler == handler {
-				node = val
-				break
-			}
-		}
-	}
-	if node != nil {
-		delete(s.handlers, node.id)
-		for addr, cli := range s.clis {
-			if cli.handler == node.handler {
-				delete(s.clis, addr)
-				break
-			}
-		}
-		node.handler = nil
-	}
-}
-
-func (s *RouteService) getHandlerById(id string) ServiceHandler {
-	if val, ok := s.nodes[id]; ok {
-		return val.handler
-	}
-	return nil
-}
-
-func (s *RouteService) selectOneHandler(pkt *RoutePacket) ServiceHandler {
-	ttl := pkt.GetTtl()
-	if ttl > 0 {
-		*pkt.Ttl = ttl - 1
-	}
-
-	key := pkt.GetAkey()
-	if ptr, ok := s.handlers[key]; ok {
-		return ptr
-	}
-
-	var handler ServiceHandler
-	if ttl == 0 {
-		handler = s.getHandlerById(pkt.GetToId())
-	}
-	if handler == nil {
-		rtt := 0xffff
-		for _, val := range s.nodes {
-			if val.handler != nil {
-				if handler == nil {
-					handler = val.handler
-				} else if val.rtt > 0 && val.rtt < rtt {
-					rtt = val.rtt
-					handler = val.handler
-				}
-			}
-		}
-	}
-	if handler != nil {
-		s.handlers[key] = handler
-	}
-	return handler
 }
 
 // data flow:
@@ -324,4 +226,107 @@ func (s *RouteService) processPacket(data []byte, from ServiceHandler) error {
 	}
 
 	return nil
+}
+
+func (s *RouteService) checkStatus() {
+	// remove timeout handler
+	for _, node := range s.nodes {
+		if node.handler != nil && node.handler.CheckTimeout(5*1000) {
+			node.handler.Close()
+			s.closeHandler(node, node.handler)
+		}
+	}
+
+	// send check peridocally
+	for _, node := range s.nodes {
+		if node.handler != nil && node.CheckTimeout(3000) {
+			packet := createRoutePacket(RouteDataType_RouteDataCheck, s.MyId(), node.handler.GetOneSeqNo())
+			if data, err := proto.Marshal(packet); err == nil {
+				node.handler.SendData(data, nil)
+			}
+		}
+	}
+
+	// try to connect initial remotes
+	for _, addr := range s.RouteParams().InitAddrs {
+		break
+		if cli, ok := s.clis[addr]; !ok {
+			if cli = NewSrtClient(s, addr); cli != nil {
+				packet := createRoutePacket(RouteDataType_RouteDataInit, s.MyId(), cli.handler.GetOneSeqNo())
+				packet.Node = s.MyNode()
+				if data, err := proto.Marshal(packet); err == nil {
+					cli.handler.SendData(data, nil)
+				}
+				s.clis[addr] = cli
+			} else {
+				log.Warnln(s.TAG, "fail to connect with "+addr)
+			}
+		}
+	}
+}
+
+func (s *RouteService) closeHandler(node *NodeInfo, handler ServiceHandler) {
+	if node == nil {
+		for _, val := range s.nodes {
+			if val.handler == handler {
+				node = val
+				break
+			}
+		}
+	}
+	if node != nil {
+		delete(s.handlers, node.id)
+		for addr, cli := range s.clis {
+			if cli.handler == node.handler {
+				delete(s.clis, addr)
+				break
+			}
+		}
+		node.handler = nil
+	}
+}
+
+func (s *RouteService) getHandlerById(id string) ServiceHandler {
+	if val, ok := s.nodes[id]; ok {
+		return val.handler
+	}
+	return nil
+}
+
+func (s *RouteService) selectOneHandler(pkt *RoutePacket) ServiceHandler {
+	ttl := pkt.GetTtl()
+	if ttl > 0 {
+		*pkt.Ttl = ttl - 1
+	}
+
+	key := pkt.GetAkey()
+	if ptr, ok := s.handlers[key]; ok {
+		return ptr
+	}
+
+	var handler ServiceHandler
+	if ttl == 0 {
+		handler = s.getHandlerById(pkt.GetToId())
+	}
+	if handler == nil {
+		rtt := 0xffff
+		for _, val := range s.nodes {
+			if val.handler != nil {
+				if handler == nil {
+					handler = val.handler
+				} else if val.rtt > 0 && val.rtt < rtt {
+					rtt = val.rtt
+					handler = val.handler
+				}
+			}
+		}
+	}
+	if handler != nil {
+		s.handlers[key] = handler
+	}
+	return handler
+}
+
+func (s *RouteService) checkRouteLink(srcLoc, dstLoc *GeoLocation) bool {
+	return false
 }

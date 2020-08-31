@@ -18,41 +18,18 @@ const (
 
 	// client Api
 	kApiWebrtcVersion = "/webrtc/version"
-	kApiWebrtcRoute   = "/webrtc/route"
+	kApiWebrtcStatus  = "/webrtc/status"
+
+	// new api
+	kApiWebrtcRoute = "/webrtc/route"
+
+	// old api
 	kApiWebrtcRequest = "/webrtc/request"
 	kApiWebrtcBoard   = "/board"
-
-	// proxy Api
-	kApiProxyWss        = "/proxy/wss"
-	kApiProxyRegister   = "/proxy/register"
-	kApiProxyUnRegister = "/proxy/unregister"
-	kApiProxyStatus     = "/proxy/status"
-	kApiProxyQuery      = "/proxy/query"
 )
 
 /// The /webrtc/route api json (default)
 // client send json(with server-candaidates) to proxy.
-
-func writeToRestSdpIce(to *RestSdpIce, from *util.MediaDesc) {
-	ufrag, pwd, options := from.GetUfrag(), from.GetPwd(), from.GetOptions()
-	to.Ufrag = &ufrag
-	to.Pwd = &pwd
-	to.Options = &options
-}
-
-func writeToSdpIceAttr(to *util.SdpIceAttr, from *RestSdpIce) {
-	ufrag, pwd, options := from.GetUfrag(), from.GetPwd(), from.GetOptions()
-	to.Ufrag = ufrag
-	to.Pwd = pwd
-	to.Options = options
-}
-
-type RouteInfo struct {
-	OfferIce   util.SdpIceAttr
-	AnswerIce  util.SdpIceAttr
-	Candidates []string
-	byRoute    bool
-}
 
 // client recv response from proxy.
 //  if recv server candidates, client will connect to media server directly,
@@ -81,22 +58,6 @@ func NewHttpServeHandler(name string, cfg *RestNetParams) http.Handler {
 	}
 }
 
-func createJsonString(key, value string) string {
-	if len(key) > 0 && len(value) > 0 {
-		return fmt.Sprintf("{%s: %s}", key, value)
-	} else {
-		return "{}"
-	}
-}
-
-func createJsonBytes(key, value string) []byte {
-	return []byte(createJsonString(key, value))
-}
-
-func createJsonStatus(value string) []byte {
-	return createJsonBytes("status", value)
-}
-
 func (p *HttpServerHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	//log.Print2f(p.TAG, "ServeHTTP, http/https req: %v, method:%v", r.URL.Path, r.Method)
 	if p.Config.RequestID != "" {
@@ -118,12 +79,18 @@ func (p *HttpServerHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (p *HttpServerHandler) handleRequest(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
-	raddr := r.RemoteAddr
-	log.Println(p.TAG, "http path=", path, raddr)
+	log.Println(p.TAG, "http path=", path, r.RemoteAddr)
 
-	if strings.HasPrefix(path, kApiWebrtcVersion) {
-		w.Write(createJsonBytes("version", kAgentVersion))
-		return
+	if r.Method == http.MethodGet {
+		if strings.HasPrefix(path, kApiWebrtcVersion) {
+			w.Write(createJsonBytes("version", kAgentVersion))
+			return
+		}
+
+		if strings.HasPrefix(path, kApiWebrtcStatus) {
+			w.Write(createJsonBytes("status", "OK"))
+			return
+		}
 	}
 
 	if r.Method != http.MethodPost {
@@ -132,6 +99,10 @@ func (p *HttpServerHandler) handleRequest(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	p.handlePostRequest(w, r)
+}
+
+func (p *HttpServerHandler) handlePostRequest(w http.ResponseWriter, r *http.Request) {
 	encoding := r.Header.Get("Content-Encoding")
 	body, err := util.ReadHttpBody(r.Body, encoding)
 	if body == nil || err != nil {
@@ -141,6 +112,8 @@ func (p *HttpServerHandler) handleRequest(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	path := r.URL.Path
+	raddr := r.RemoteAddr
 	log.Println(p.TAG, "handle http body-len=", len(body), raddr)
 
 	var handleErr error
@@ -202,14 +175,24 @@ func (p *HttpServerHandler) handleWebrtcRequest(w http.ResponseWriter, raddr str
 
 	log.Println(p.TAG, "http webrtc request=", raddr, jreq)
 
-	// parse offer which must have 'a=candidate:' lines
-	var offer util.MediaDesc
-	if !offer.Parse([]byte(*jreq.Action.UserRoster[0].AudioStatus.Channels[0].WebrtcOffer)) {
-		return errors.New("Invalid offer")
+	// get board offer
+	var szOffer string
+	if channel := getBoardChannel(jreq.Action); channel != nil {
+		szOffer = channel.GetWebrtcOffer()
 	}
 
-	// So request must have 'dst_url' (e.g. url of one media server).
-	if _, err := url.ParseRequestURI(*jreq.DstUrl); err != nil {
+	// parse offer which must have 'a=candidate:' lines
+	var offer util.SdpDesc
+	if len(szOffer) == 0 || !offer.Parse([]byte(szOffer)) {
+		return errors.New("Invalid offer in request")
+	}
+
+	// request must have 'dst_url' (e.g. url of one media server).
+	if jreq.DstUrl == nil {
+		return errors.New("No dst_url in request")
+	}
+	dst_url := *jreq.DstUrl
+	if _, err := url.ParseRequestURI(dst_url); err != nil {
 		return err
 	}
 
@@ -217,8 +200,8 @@ func (p *HttpServerHandler) handleWebrtcRequest(w http.ResponseWriter, raddr str
 	var jresp RestBoardResponse
 
 	// send offer to 'dst_url'(media server) which will response with answer.
-	// like a http reverse-proxy
-	if rdata, err := util.HttpSendPost(*jreq.DstUrl, body); err == nil {
+	//  like a http reverse-proxy
+	if rdata, err := util.HttpSendPost(dst_url, body); err == nil {
 		if err := json.Unmarshal(rdata, &jresp); err != nil {
 			return err
 		}
@@ -226,29 +209,34 @@ func (p *HttpServerHandler) handleWebrtcRequest(w http.ResponseWriter, raddr str
 		return err
 	}
 
+	// get board answer
+	var szAnswer string
+	if channel := getBoardChannel(jresp.Action); channel != nil {
+		szAnswer = channel.GetWebrtcAnswer()
+	}
+
 	// parse answer
-	var answer util.MediaDesc
-	answerBuf := jresp.Action.UserRoster[0].AudioStatus.Channels[0].GetWebrtcAnswer()
-	if !answer.Parse([]byte(answerBuf)) {
+	var answer util.SdpDesc
+	if len(szAnswer) == 0 || !answer.Parse([]byte(szAnswer)) {
 		return errors.New("Invalid answer")
 	}
 
 	// parse ICE from offer/answer
-	var regInfo RestPacket
-	writeToRestSdpIce(regInfo.OfferIce, &offer)
-	writeToRestSdpIce(regInfo.AnswerIce, &answer)
+	var packet RestPacket
+	writeToRestSdpIce(packet.OfferIce, &offer)
+	writeToRestSdpIce(packet.AnswerIce, &answer)
 
 	// parse candidates from offer
-	_, regInfo.Candidates = util.ParseCandidates(offer.GetCandidates())
+	_, packet.Candidates = util.ParseSdpCandidates(offer.GetCandidates())
 
 	// handle to get new candidates
-	candidates := p.handleCandidates(raddr, &regInfo)
+	candidates := p.handleCandidates(raddr, &packet)
 	if len(candidates) == 0 {
 		return errors.New("No candidates for client-use")
 	}
 
 	// update answer with new candidates and then reply to client
-	newAnswerBuf := string(util.UpdateSdpCandidates([]byte(answerBuf), candidates))
+	newAnswerBuf := string(util.UpdateSdpCandidates([]byte(szAnswer), candidates))
 	jresp.Action.UserRoster[0].AudioStatus.Channels[0].WebrtcAnswer = &newAnswerBuf
 
 	return p.sendJson(w, jresp)
@@ -269,8 +257,8 @@ func (p *HttpServerHandler) handleCandidates(srcAddr string, pkt *RestPacket) []
 	}
 
 	srcIp := util.ParseHostIp(srcAddr)
-	proxyIp := util.ParseCandidateIp(proxyCands[0])
-	dstIp := util.ParseCandidateIp(dstCands[0])
+	proxyIp := util.ParseSdpCandidateIp(proxyCands[0])
+	dstIp := util.ParseSdpCandidateIp(dstCands[0])
 	log.Println(p.TAG, "check candidate ips:", srcIp, proxyIp, dstIp)
 
 	// default use server-candidates
@@ -282,7 +270,7 @@ func (p *HttpServerHandler) handleCandidates(srcAddr string, pkt *RestPacket) []
 		candidates = proxyCands
 
 		// add to proxy cache for processing
-		info := &RouteInfo{}
+		info := &WebrtcIce{byRoute: false}
 		writeToSdpIceAttr(&info.OfferIce, pkt.OfferIce)
 		writeToSdpIceAttr(&info.AnswerIce, pkt.AnswerIce)
 		info.Candidates = util.CloneArray(pkt.Candidates)
@@ -293,47 +281,50 @@ func (p *HttpServerHandler) handleCandidates(srcAddr string, pkt *RestPacket) []
 	} else {
 		// use server-candidaates: client -> server
 		// And nop for proxy
+		log.Println(p.TAG, "use direct between client and server")
 	}
 
 	return candidates
 }
 
-/// The /proxy/query api
+/// misc tools
 
-type ProxyStatus struct {
-	Uuid     string `json:"uuid"`
-	Name     string `json:"name"`
-	Address  string `json:"address"` // http://ip/host:port/
-	Rtt      int    `json:"rtt"`
-	BweIn    int    `json:"bwe_in"`  // bandwidth in
-	BweOut   int    `json:"bwe_out"` // bandwidth out
-	Load     int    `json:"load"`    // current load
-	Capacity int    `json:"capacity"`
-	City     string `json:"city"`
-	Country  string `json:"country"`
-	LastTime bool   `json:"last_time"`
+func createJsonString(key, value string) string {
+	if len(key) > 0 && len(value) > 0 {
+		return fmt.Sprintf("{%s: %s}", key, value)
+	} else {
+		return "{}"
+	}
 }
 
-type ProxyQueryJson struct {
-	Self  ProxyStatus `json:"self"`  // info of sender
-	Peers ProxyStatus `json:"peers"` // peers in sender
+func createJsonBytes(key, value string) []byte {
+	return []byte(createJsonString(key, value))
 }
 
-type ProxyQueryResponseJson struct {
-	Self  ProxyStatus   `json:"self"`  // info of remote
-	Peers []ProxyStatus `json:"peers"` // peers in remote
+func createJsonStatus(value string) []byte {
+	return createJsonBytes("status", value)
 }
 
-// The /proxy/link/create api
-
-type ProxyLinkJson struct {
-	Uuid string `json:"uuid"` // link uuid
-	Akey string `json:"akey"` // ice akey for data
+func writeToRestSdpIce(to *RestSdpIce, from *util.SdpDesc) {
+	ufrag, pwd, options := from.GetUfrag(), from.GetPwd(), from.GetOptions()
+	to.Ufrag = &ufrag
+	to.Pwd = &pwd
+	to.Options = &options
 }
 
-// client -> Proxy -> LinkA -> LinkB -> server
-type ProxyCreateLinkJson struct {
-	Uuid    string          `json:"uuid"`    // send from proxy(uuid)
-	Links   []ProxyLinkJson `json:"links"`   // links info
-	Servers []string        `json:"servers"` // "udp|tcp://ip:port"
+func writeToSdpIceAttr(to *util.SdpIceAttr, from *RestSdpIce) {
+	ufrag, pwd, options := from.GetUfrag(), from.GetPwd(), from.GetOptions()
+	to.Ufrag = ufrag
+	to.Pwd = pwd
+	to.Options = options
+}
+
+func getBoardChannel(action *RestBoardAction) *RestBoardChannel {
+	if action != nil && len(action.UserRoster) > 0 {
+		roster := action.UserRoster[0]
+		if roster.AudioStatus != nil && len(roster.AudioStatus.Channels) > 0 {
+			return roster.AudioStatus.Channels[0]
+		}
+	}
+	return nil
 }

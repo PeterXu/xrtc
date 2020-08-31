@@ -3,6 +3,7 @@ package webrtc
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/PeterXu/xrtc/util"
 	log "github.com/PeterXu/xrtc/util"
@@ -208,7 +209,7 @@ func (c *Config) Load(fname string) bool {
 // Net params
 
 type RouteNetParams struct {
-	Location     string
+	Location     GeoLocation
 	Capacity     uint32
 	_PublicHosts []string // "host"
 	PublicAddrs  []string // TODO: "proto://host:port"
@@ -237,7 +238,20 @@ func (n *RouteNetParams) Load(service yaml.Map, addrs []string) error {
 	if err != nil {
 		return err
 	}
-	n.Location = getYamlString(node, "location")
+	loc := getYamlString(node, "location")
+	if len(loc) > 0 {
+		parts := strings.Split(loc, ";")
+		for _, part := range parts {
+			if pair := util.ParseKeyValue(part, "="); pair != nil {
+				switch pair.First {
+				case "city":
+					n.Location.City = pair.Second
+				case "country":
+					n.Location.Country = pair.Second
+				}
+			}
+		}
+	}
 	n.Capacity = uint32(yaml.ToInt(node.Key("capacity"), 0))
 
 	n._InitAddrs = getYamlListString(node, "init_addrs")

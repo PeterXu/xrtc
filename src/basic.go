@@ -160,3 +160,14 @@ func NewNetHandler() *NetHandler {
 		exitTick: make(chan bool),
 	}
 }
+
+/// webrtc ice info
+
+// byRoute: true, means that client -> proxy .. proxy -> server
+// byRoute: false, means that client -> proxy -> server
+type WebrtcIce struct {
+	OfferIce   util.SdpIceAttr
+	AnswerIce  util.SdpIceAttr
+	Candidates []string
+	byRoute    bool
+}

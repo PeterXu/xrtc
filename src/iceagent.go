@@ -24,7 +24,7 @@ type IceAgent struct {
 	// when iceDirect == true
 	iceInChan  chan []byte
 	iceOutChan chan []byte
-	iceCands   []util.Candidate
+	iceCands   []util.SdpCandidate
 	remoteAddr net.Addr
 }
 
@@ -41,9 +41,9 @@ func NewIceAgent(user *User, chanRecv chan interface{}) *IceAgent {
 func (s *IceAgent) Init(ufrag, pwd, remote string) bool {
 	log.Println(s.TAG, "Init begin")
 	if s.user.isIceDirect() {
-		var desc util.MediaDesc
+		var desc util.SdpDesc
 		if desc.Parse([]byte(remote)) {
-			s.iceCands, _ = util.ParseCandidates(desc.GetCandidates())
+			s.iceCands, _ = util.ParseSdpCandidates(desc.GetCandidates())
 			log.Println(s.TAG, "Init candidates", s.iceCands)
 			// connect server with cands
 			s.iceInChan = make(chan []byte, 100)
@@ -169,8 +169,8 @@ func (s *IceAgent) ChanRecv() chan interface{} {
 
 // iceLoop works when iceDirect is on
 func (s *IceAgent) iceLoop(retCh chan error) {
-	var tcpCands []util.Candidate
-	var udpCands []util.Candidate
+	var tcpCands []util.SdpCandidate
+	var udpCands []util.SdpCandidate
 	for _, cand := range s.iceCands {
 		if cand.CandType != "typ host" {
 			continue
@@ -184,7 +184,7 @@ func (s *IceAgent) iceLoop(retCh chan error) {
 		}
 	}
 
-	var cands []util.Candidate
+	var cands []util.SdpCandidate
 	if s.user.isIceTcp() {
 		cands = append(cands, tcpCands...)
 		cands = append(cands, udpCands...)

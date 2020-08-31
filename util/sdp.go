@@ -1,30 +1,31 @@
 package util
 
 import (
+	"log"
 	"strings"
 )
 
 const kSdpOwner string = "xrtc"
 const kSdpCname string = "xrtc_endpoint"
 
-var kNewlineChar = []byte{'\n'}
-var kSpaceChar = []byte{' '}
+var kSdpNewlineChar = []byte{'\n'}
+var kSdpSpaceChar = []byte{' '}
 
-// MediaType m=audio/video/application
-type MediaType int
+// m=audio/video/application
+type SdpMediaType int
 
 // These are different media types
 const (
-	kMediaNil   MediaType = 0
-	kMediaAudio MediaType = 1 << (iota - 1)
-	kMediaVideo
-	kMediaApplication
+	kSdpMediaNil   SdpMediaType = 0
+	kSdpMediaAudio SdpMediaType = 1 << (iota - 1)
+	kSdpMediaVideo
+	kSdpMediaApplication
 )
 
 // SSRC pair: main/rtx
 // a=ssrc
 // a=fmtp:. apt=rtx
-type SSRC struct {
+type SdpSsrc struct {
 	main uint32
 	rtx  uint32
 }
@@ -34,16 +35,16 @@ type SdpMediaDirection int
 
 // These are different sdp directions: sendrecv/sendonly/recvonly/inactive
 const (
-	kDirectionInactive SdpMediaDirection = iota
-	kDirectionSendOnly
-	kDirectionRecvOnly
-	kDirectionSendRecv
+	kSdpDirectionInactive SdpMediaDirection = iota
+	kSdpDirectionSendOnly
+	kSdpDirectionRecvOnly
+	kSdpDirectionSendRecv
 )
 
 // SDP a=msid-semantic
 // a=msid-semantic:WMS *
 // a=msid-semantic:WMS id1
-type MsidSemantic struct {
+type SdpMsidSemantic struct {
 	name  string
 	msids []string
 }
@@ -51,7 +52,7 @@ type MsidSemantic struct {
 // SDP a=rtpmap
 // a=rtpmap:111 opus/48000/2
 // a=rtpmap:126 H264/90000
-type RtpMapInfo struct {
+type SdpRtpMapInfo struct {
 	ptype     int
 	codec     string
 	frequency int
@@ -60,8 +61,8 @@ type RtpMapInfo struct {
 	apt_ptype int
 }
 
-func (r *RtpMapInfo) Clone() *RtpMapInfo {
-	d := &RtpMapInfo{}
+func (r *SdpRtpMapInfo) Clone() *SdpRtpMapInfo {
+	d := &SdpRtpMapInfo{}
 	d.ptype = r.ptype
 	d.codec = r.codec
 	d.frequency = r.frequency
@@ -71,28 +72,28 @@ func (r *RtpMapInfo) Clone() *RtpMapInfo {
 	return d
 }
 
-func (r RtpMapInfo) a_rtpmap() string {
+func (r SdpRtpMapInfo) a_rtpmap() string {
 	return Itoa(r.ptype) + " " + r.codec + "/" + Itoa(r.frequency)
 }
 
-func (r RtpMapInfo) a_rtxmap() string {
+func (r SdpRtpMapInfo) a_rtxmap() string {
 	return Itoa(r.apt_ptype) + " rtx/90000"
 }
 
-func (r RtpMapInfo) a_fmtp_apt() string {
+func (r SdpRtpMapInfo) a_fmtp_apt() string {
 	return Itoa(r.apt_ptype) + " apt=" + Itoa(r.ptype)
 }
 
-// NewFmtpInfo return a FmtpInfo object
+// NewSdpFmtpInfo return a SdpFmtpInfo object
 // a=fmtp:111 maxplaybackrate=48000;stereo=1;useinbandfec=1
 // a=fmtp:126 profile-level-id=42e01f;level-asymmetry-allowed=1;packetization-mode=1
 // a=fmtp:101 0-15
-func NewFmtpInfo(ptype int) *FmtpInfo {
-	return &FmtpInfo{ptype: ptype, props: make(map[string]int)}
+func NewSdpFmtpInfo(ptype int) *SdpFmtpInfo {
+	return &SdpFmtpInfo{ptype: ptype, props: make(map[string]int)}
 }
 
 // SDP media format-specific parameters: a=fmtp
-type FmtpInfo struct {
+type SdpFmtpInfo struct {
 	ptype int
 	props map[string]int
 	misc  string
@@ -101,7 +102,7 @@ type FmtpInfo struct {
 // SDP rtcp feedback: a=rtcp-fb
 // a=rtcp-fb:126 nack
 // a=rtcp-fb:126 nack pli
-type RtcpFbInfo struct {
+type SdpRtcpFbInfo struct {
 	ptype  int
 	fbtype string
 }
@@ -109,7 +110,7 @@ type RtcpFbInfo struct {
 // SDP rtp-ext-header: a=extmap
 // a=extmap:1 http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time
 // a=extmap:2/sendrecv urn:ietf:params:rtp-hdrext:toffset
-type ExtMapInfo struct {
+type SdpExtMapInfo struct {
 	id        int
 	direction string
 	uri       string
@@ -121,7 +122,7 @@ type ExtMapInfo struct {
 // a=ssrc:1081040086 msid:id1 id2
 // a=ssrc:1081040086 mslabel:id1
 // a=ssrc:1081040086 label:id2
-type SsrcInfo struct {
+type SdpSsrcInfo struct {
 	ssrc    uint32
 	cname   string
 	msids   []string
@@ -131,24 +132,24 @@ type SsrcInfo struct {
 
 // SDP a=ssrc-group:FID
 // a=ssrc-group:FID 1081040086 1081040087
-type FidInfo struct {
+type SdpFidInfo struct {
 	main uint32
 	rtx  uint32
 }
 
 // SDP sctp: a=sctpmap
 // a=sctpmap:5000 webrtc-datachannel 1024
-type SctpInfo struct {
+type SdpSctpInfo struct {
 	port       int
 	name       string
 	number     int
 	is_sctpmap bool
 }
 
-func NewMediaAttr(mtype, proto string) *MediaAttr {
-	return &MediaAttr{mtype: mtype, proto: proto,
-		fmtps:      make(map[int]*FmtpInfo),
-		av_rtpmaps: make(map[string]*RtpMapInfo)}
+func NewSdpMediaAttr(mtype, proto string) *SdpMediaAttr {
+	return &SdpMediaAttr{mtype: mtype, proto: proto,
+		fmtps:      make(map[int]*SdpFmtpInfo),
+		av_rtpmaps: make(map[string]*SdpRtpMapInfo)}
 }
 
 type SdpIceAttr struct {
@@ -158,34 +159,34 @@ type SdpIceAttr struct {
 }
 
 // SDP media attribute lines
-type MediaAttr struct {
-	mtype            string            // m=
-	proto            string            // m=
-	ptypes           []string          // m=
-	ice_ufrag        string            // a=ice-ufrag:..
-	ice_pwd          string            // a=ice-pwd:..
-	ice_options      string            // a=ice-options:..
-	fingerprint      StringPair        // a=fingerprint:sha-256 ..
-	setup            string            // a=setup:..
-	direction        SdpMediaDirection // a=sendrecv/sendonly/recvonly
-	mid              string            // a=mid:..
-	msid             []*StringPair     // a=msid:{id1} {id2}
-	rtcp_mux         bool              // a=rtcp-mux
-	rtcp_rsize       bool              // a=rtcp-rsize
-	rtpmaps          []*RtpMapInfo     // a=rtpmap:..
-	fmtps            map[int]*FmtpInfo // a=fmtp:..
-	rtcp_fbs         []*RtcpFbInfo     // a=rtcp-fb:..
-	extmaps          []*ExtMapInfo     // a=extmap:..
-	fid_ssrcs        []*FidInfo        // a=ssrc-group:FID ..
-	ssrcs            []*SsrcInfo       // a=ssrc:..
-	msids            []string          // a=msid:..
-	sctp             *SctpInfo         // a=sctpmap: or a=sctp-port:
-	max_message_size int               // a=max-message-size:
-	candidates       []string          // a=candidate:
+type SdpMediaAttr struct {
+	mtype            string               // m=
+	proto            string               // m=
+	ptypes           []string             // m=
+	ice_ufrag        string               // a=ice-ufrag:..
+	ice_pwd          string               // a=ice-pwd:..
+	ice_options      string               // a=ice-options:..
+	fingerprint      StringPair           // a=fingerprint:sha-256 ..
+	setup            string               // a=setup:..
+	direction        SdpMediaDirection    // a=sendrecv/sendonly/recvonly
+	mid              string               // a=mid:..
+	msid             []*StringPair        // a=msid:{id1} {id2}
+	rtcp_mux         bool                 // a=rtcp-mux
+	rtcp_rsize       bool                 // a=rtcp-rsize
+	rtpmaps          []*SdpRtpMapInfo     // a=rtpmap:..
+	fmtps            map[int]*SdpFmtpInfo // a=fmtp:..
+	rtcp_fbs         []*SdpRtcpFbInfo     // a=rtcp-fb:..
+	extmaps          []*SdpExtMapInfo     // a=extmap:..
+	fid_ssrcs        []*SdpFidInfo        // a=ssrc-group:FID ..
+	ssrcs            []*SdpSsrcInfo       // a=ssrc:..
+	msids            []string             // a=msid:..
+	sctp             *SdpSctpInfo         // a=sctpmap: or a=sctp-port:
+	max_message_size int                  // a=max-message-size:
+	candidates       []string             // a=candidate:
 	maxptime         int
 
 	// for anwser
-	av_rtpmaps   map[string]*RtpMapInfo
+	av_rtpmaps   map[string]*SdpRtpMapInfo
 	av_ice_ufrag string
 	av_ice_pwd   string
 	use_rtx      bool
@@ -194,8 +195,8 @@ type MediaAttr struct {
 	use_fid      bool
 }
 
-func (a *MediaAttr) GetSsrcs() *SSRC {
-	ssrc := &SSRC{}
+func (a *SdpMediaAttr) GetSsrcs() *SdpSsrc {
+	ssrc := &SdpSsrc{}
 	if len(a.fid_ssrcs) > 0 {
 		ssrc.main = a.fid_ssrcs[0].main
 		ssrc.rtx = a.fid_ssrcs[0].rtx
@@ -208,32 +209,32 @@ func (a *MediaAttr) GetSsrcs() *SSRC {
 }
 
 // SDP media lines
-type MediaSdp struct {
-	owner         string       // o=..
-	source        string       // s=..
-	ice_lite      bool         // a=ice-lite
-	ice_options   string       // global a=ice-options:..
-	fingerprint   StringPair   // global a=fingerprint:sha-256 ..
-	group_bundles []string     // a=group:BUNDLE ..
-	msid_semantic MsidSemantic // a=msid-sematic: ..
-	audios        []*MediaAttr // m=audio ..
-	videos        []*MediaAttr // m=video ..
-	applications  []*MediaAttr // m=application ..
+type SdpAll struct {
+	owner         string          // o=..
+	source        string          // s=..
+	ice_lite      bool            // a=ice-lite
+	ice_options   string          // global a=ice-options:..
+	fingerprint   StringPair      // global a=fingerprint:sha-256 ..
+	group_bundles []string        // a=group:BUNDLE ..
+	msid_semantic SdpMsidSemantic // a=msid-sematic: ..
+	audios        []*SdpMediaAttr // m=audio ..
+	videos        []*SdpMediaAttr // m=video ..
+	applications  []*SdpMediaAttr // m=application ..
 }
 
 // parseSdp to parse SDP lines, return true if ok
-func (m *MediaSdp) parseSdp(data []byte) bool {
-	var mattr *MediaAttr
+func (m *SdpAll) parseSdp(data []byte) bool {
+	var mattr *SdpMediaAttr
 	lines := strings.Split(string(data), "\r\n")
 	if len(lines) <= 1 {
 		lines = strings.Split(string(data), "\n")
 	}
 
-	//Println("[sdp] parseSdp, lines=", len(lines))
+	//log.Println("[sdp] parseSdp, lines=", len(lines))
 	for item := range lines {
 		line := []byte(lines[item])
 		if len(line) <= 2 || line[1] != '=' {
-			//Warnln("invalid sdp line: ", string(line))
+			//log.Println("invalid sdp line: ", string(line))
 			continue
 		}
 
@@ -253,10 +254,10 @@ func (m *MediaSdp) parseSdp(data []byte) bool {
 		case 'm':
 			fields := strings.Split(string(line[2:]), " ")
 			if len(fields) >= 4 {
-				mattr = NewMediaAttr(fields[0], fields[2])
+				mattr = NewSdpMediaAttr(fields[0], fields[2])
 				mattr.ptypes = append(mattr.ptypes, fields[3:]...)
 			} else {
-				mattr = NewMediaAttr(fields[0], "")
+				mattr = NewSdpMediaAttr(fields[0], "")
 			}
 			if fields[0] == "audio" {
 				m.audios = append(m.audios, mattr)
@@ -278,7 +279,7 @@ func (m *MediaSdp) parseSdp(data []byte) bool {
 }
 
 // parseSdp_a to parse SDP attribute: 'a='
-func (m *MediaSdp) parseSdp_a(line []byte, media *MediaAttr) {
+func (m *SdpAll) parseSdp_a(line []byte, media *SdpMediaAttr) {
 	fields := strings.SplitN(string(line[2:]), ":", 2)
 	akey := fields[0]
 	if len(fields) == 1 {
@@ -288,18 +289,18 @@ func (m *MediaSdp) parseSdp_a(line []byte, media *MediaAttr) {
 		}
 
 		if media == nil {
-			Warnln("[sdp] no valid media for line=", string(line[:]))
+			log.Println("[sdp] no valid media for line=", string(line[:]))
 			return
 		}
 
 		if akey == "inactive" {
-			media.direction = kDirectionInactive
+			media.direction = kSdpDirectionInactive
 		} else if akey == "sendonly" {
-			media.direction = kDirectionSendOnly
+			media.direction = kSdpDirectionSendOnly
 		} else if akey == "recvonly" {
-			media.direction = kDirectionRecvOnly
+			media.direction = kSdpDirectionRecvOnly
 		} else if akey == "sendrecv" {
-			media.direction = kDirectionSendRecv
+			media.direction = kSdpDirectionSendRecv
 		} else if akey == "rtcp-mux" {
 			media.rtcp_mux = true
 		} else if akey == "rtcp-rsize" {
@@ -310,7 +311,7 @@ func (m *MediaSdp) parseSdp_a(line []byte, media *MediaAttr) {
 
 	if akey == "group" {
 		attrs := strings.Split(fields[1], " ")
-		//Println("[sdp] a=group:", attrs, len(attrs))
+		//log.Println("[sdp] a=group:", attrs, len(attrs))
 		if len(attrs) >= 1 {
 			aval := strings.ToLower(attrs[0])
 			switch aval {
@@ -319,7 +320,7 @@ func (m *MediaSdp) parseSdp_a(line []byte, media *MediaAttr) {
 					m.group_bundles = append(m.group_bundles, attrs[1:]...)
 				}
 			default:
-				Warnln("[sdp] unsupported attr - a=group:", aval)
+				log.Println("[sdp] unsupported attr - a=group:", aval)
 			}
 		}
 		return
@@ -350,7 +351,7 @@ func (m *MediaSdp) parseSdp_a(line []byte, media *MediaAttr) {
 			return
 		}
 
-		Warnln("[sdp] no valid media for line=", string(line[:]))
+		log.Println("[sdp] no valid media for line=", string(line[:]))
 		return
 	}
 
@@ -375,7 +376,7 @@ func (m *MediaSdp) parseSdp_a(line []byte, media *MediaAttr) {
 	} else if akey == "rtpmap" {
 		attrs := strings.SplitN(fields[1], " ", 2)
 		if len(attrs) == 2 {
-			rmap := &RtpMapInfo{ptype: Atoi(attrs[0])}
+			rmap := &SdpRtpMapInfo{ptype: Atoi(attrs[0])}
 			props := strings.Split(attrs[1], "/")
 			if len(props) >= 2 {
 				rmap.codec = props[0]
@@ -391,7 +392,7 @@ func (m *MediaSdp) parseSdp_a(line []byte, media *MediaAttr) {
 	} else if akey == "fmtp" {
 		attrs := strings.SplitN(fields[1], " ", 2)
 		if len(attrs) == 2 {
-			fmtp := NewFmtpInfo(Atoi(attrs[0]))
+			fmtp := NewSdpFmtpInfo(Atoi(attrs[0]))
 			props := strings.Split(attrs[1], ";")
 			for k := range props {
 				kv := strings.Split(props[k], "=")
@@ -406,13 +407,13 @@ func (m *MediaSdp) parseSdp_a(line []byte, media *MediaAttr) {
 	} else if akey == "rtcp-fb" {
 		attrs := strings.SplitN(fields[1], " ", 2)
 		if len(attrs) == 2 {
-			rtcpfb := &RtcpFbInfo{Atoi(attrs[0]), attrs[1]}
+			rtcpfb := &SdpRtcpFbInfo{Atoi(attrs[0]), attrs[1]}
 			media.rtcp_fbs = append(media.rtcp_fbs, rtcpfb)
 		}
 	} else if akey == "extmap" {
 		attrs := strings.SplitN(fields[1], " ", 2)
 		if len(attrs) == 2 {
-			extmap := &ExtMapInfo{id: Atoi(attrs[0]), uri: attrs[1]}
+			extmap := &SdpExtMapInfo{id: Atoi(attrs[0]), uri: attrs[1]}
 			keys := strings.Split(attrs[0], "/")
 			if len(keys) >= 2 {
 				extmap.direction = keys[1]
@@ -425,7 +426,7 @@ func (m *MediaSdp) parseSdp_a(line []byte, media *MediaAttr) {
 			if attrs[0] == "FID" {
 				props := strings.Split(attrs[1], " ")
 				if len(props) == 2 {
-					fid := &FidInfo{Atou32(props[0]), Atou32(props[1])}
+					fid := &SdpFidInfo{Atou32(props[0]), Atou32(props[1])}
 					media.fid_ssrcs = append(media.fid_ssrcs, fid)
 				}
 			} else if attrs[0] == "SIM" {
@@ -435,7 +436,7 @@ func (m *MediaSdp) parseSdp_a(line []byte, media *MediaAttr) {
 	} else if akey == "ssrc" {
 		attrs := strings.SplitN(fields[1], " ", 2)
 		if len(attrs) == 2 {
-			ssrc := &SsrcInfo{ssrc: Atou32(attrs[0])}
+			ssrc := &SdpSsrcInfo{ssrc: Atou32(attrs[0])}
 			props := strings.SplitN(attrs[1], ":", 2)
 			if len(props) == 2 {
 				if props[0] == "cname" {
@@ -459,11 +460,11 @@ func (m *MediaSdp) parseSdp_a(line []byte, media *MediaAttr) {
 	} else if akey == "sctpmap" {
 		attrs := strings.Split(fields[1], " ")
 		if len(attrs) >= 3 {
-			media.sctp = &SctpInfo{Atoi(attrs[0]), attrs[1], Atoi(attrs[2]), true}
+			media.sctp = &SdpSctpInfo{Atoi(attrs[0]), attrs[1], Atoi(attrs[2]), true}
 
 		}
 	} else if akey == "sctp-port" {
-		media.sctp = &SctpInfo{port: Atoi(fields[1])}
+		media.sctp = &SdpSctpInfo{port: Atoi(fields[1])}
 	} else if akey == "max-message-size" {
 		media.max_message_size = Atoi(fields[1])
 	} else if akey == "candidate" {
@@ -471,91 +472,91 @@ func (m *MediaSdp) parseSdp_a(line []byte, media *MediaAttr) {
 	} else if akey == "maxptime" {
 		media.maxptime = Atoi(fields[1])
 	} else {
-		Warnln("[sdp] unsupported attr=", akey)
+		log.Println("[sdp] unsupported attr=", akey)
 	}
 }
 
 // Media description (sdp offer/answer)
-type MediaDesc struct {
-	Sdp        MediaSdp
+type SdpDesc struct {
+	Sdp        SdpAll
 	haveAnswer bool
 }
 
-func (m *MediaDesc) Parse(data []byte) bool {
+func (m *SdpDesc) Parse(data []byte) bool {
 	return m.Sdp.parseSdp(data)
 }
 
-func (m *MediaDesc) GetMediaType() MediaType {
-	mt := kMediaNil
+func (m *SdpDesc) GetMediaType() SdpMediaType {
+	mt := kSdpMediaNil
 	if len(m.Sdp.audios) > 0 {
-		mt |= kMediaAudio
+		mt |= kSdpMediaAudio
 	}
 	if len(m.Sdp.videos) > 0 {
-		mt |= kMediaVideo
+		mt |= kSdpMediaVideo
 	}
 	if len(m.Sdp.applications) > 0 {
-		mt |= kMediaApplication
+		mt |= kSdpMediaApplication
 	}
 	return mt
 }
 
-func (m *MediaDesc) GetUfrag() string {
+func (m *SdpDesc) GetUfrag() string {
 	mt := m.GetMediaType()
-	if (mt & kMediaAudio) != 0 {
+	if (mt & kSdpMediaAudio) != 0 {
 		return m.Sdp.audios[0].ice_ufrag
-	} else if (mt & kMediaVideo) != 0 {
+	} else if (mt & kSdpMediaVideo) != 0 {
 		return m.Sdp.videos[0].ice_ufrag
-	} else if (mt & kMediaApplication) != 0 {
+	} else if (mt & kSdpMediaApplication) != 0 {
 		return m.Sdp.applications[0].ice_ufrag
 	} else {
-		Warnln("[desc] invalid media type = ", mt)
+		log.Println("[desc] invalid media type = ", mt)
 		return ""
 	}
 }
 
-func (m *MediaDesc) GetPwd() string {
+func (m *SdpDesc) GetPwd() string {
 	mt := m.GetMediaType()
-	if (mt & kMediaAudio) != 0 {
+	if (mt & kSdpMediaAudio) != 0 {
 		return m.Sdp.audios[0].ice_pwd
-	} else if (mt & kMediaVideo) != 0 {
+	} else if (mt & kSdpMediaVideo) != 0 {
 		return m.Sdp.videos[0].ice_pwd
-	} else if (mt & kMediaApplication) != 0 {
+	} else if (mt & kSdpMediaApplication) != 0 {
 		return m.Sdp.applications[0].ice_pwd
 	} else {
-		Warnln("[desc] invalid media type = ", mt)
+		log.Println("[desc] invalid media type = ", mt)
 		return ""
 	}
 }
 
-func (m *MediaDesc) GetOptions() string {
+func (m *SdpDesc) GetOptions() string {
 	mt := m.GetMediaType()
-	if (mt & kMediaAudio) != 0 {
+	if (mt & kSdpMediaAudio) != 0 {
 		return m.Sdp.audios[0].ice_options
-	} else if (mt & kMediaVideo) != 0 {
+	} else if (mt & kSdpMediaVideo) != 0 {
 		return m.Sdp.videos[0].ice_options
-	} else if (mt & kMediaApplication) != 0 {
+	} else if (mt & kSdpMediaApplication) != 0 {
 		return m.Sdp.applications[0].ice_options
 	} else {
-		Warnln("[desc] invalid media type = ", mt)
+		log.Println("[desc] invalid media type = ", mt)
 		return ""
 	}
 }
 
-func (m *MediaDesc) GetCandidates() []string {
+func (m *SdpDesc) GetCandidates() []string {
 	mt := m.GetMediaType()
-	if (mt & kMediaAudio) != 0 {
+	if (mt & kSdpMediaAudio) != 0 {
 		return m.Sdp.audios[0].candidates
-	} else if (mt & kMediaVideo) != 0 {
+	} else if (mt & kSdpMediaVideo) != 0 {
 		return m.Sdp.videos[0].candidates
-	} else if (mt & kMediaApplication) != 0 {
+	} else if (mt & kSdpMediaApplication) != 0 {
 		return m.Sdp.applications[0].candidates
 	} else {
-		Warnln("[desc] invalid media type = ", mt)
+		log.Println("[desc] invalid media type = ", mt)
 		return nil
 	}
 }
 
-func (m *MediaDesc) CreateAnswer() bool {
+func (m *SdpDesc) CreateAnswer() bool {
 	var ret bool
 	send_ice_ufrag := "rtc" + RandomString(29)
 	send_ice_pwd := RandomString(24)
@@ -634,21 +635,21 @@ func (m *MediaDesc) CreateAnswer() bool {
 	return ret
 }
 
-func (m *MediaDesc) ParseDrection(direction SdpMediaDirection) string {
+func (m *SdpDesc) ParseDrection(direction SdpMediaDirection) string {
 	switch direction {
-	case kDirectionSendRecv:
+	case kSdpDirectionSendRecv:
 		return "sendrecv"
-	case kDirectionRecvOnly:
+	case kSdpDirectionRecvOnly:
 		return "sendonly"
-	case kDirectionSendOnly:
+	case kSdpDirectionSendOnly:
 		return "recvonly"
-	case kDirectionInactive:
+	case kSdpDirectionInactive:
 		return "inactive"
 	}
 	return ""
 }
 
-func (m *MediaDesc) GetAudioCodec() string {
+func (m *SdpDesc) GetAudioCodec() string {
 	if m.haveAnswer {
 		for j := range m.Sdp.audios {
 			audio := m.Sdp.audios[j]
@@ -660,7 +661,7 @@ func (m *MediaDesc) GetAudioCodec() string {
 	return ""
 }
 
-func (m *MediaDesc) GetVideoCodec() string {
+func (m *SdpDesc) GetVideoCodec() string {
 	if m.haveAnswer {
 		for j := range m.Sdp.videos {
 			video := m.Sdp.videos[j]
@@ -672,7 +673,7 @@ func (m *MediaDesc) GetVideoCodec() string {
 	return ""
 }
 
-func (m *MediaDesc) AnswerSdp() string {
+func (m *SdpDesc) AnswerSdp() string {
 	var prefix []string
 	prefix = append(prefix, "v=0")
 	prefix = append(prefix, "o="+kSdpOwner+" 123456789 2 IN IP4 127.0.0.1")
@@ -681,14 +682,14 @@ func (m *MediaDesc) AnswerSdp() string {
 
 	bundles := "a=group:BUNDLE"
 	semantics := "a=msid-semantic:WMS"
-	Println("[desc] all bundles: ", m.Sdp.group_bundles)
+	log.Println("[desc] all bundles: ", m.Sdp.group_bundles)
 
 	var body []string
 	var oldSdp bool = true
 	for i := range m.Sdp.group_bundles {
 		bundle := m.Sdp.group_bundles[i]
 		bundles += " " + bundle
-		Println("[desc] one media bundle=", bundle)
+		log.Println("[desc] one media bundle=", bundle)
 
 		// check m=audio
 		for j := range m.Sdp.audios {
@@ -889,7 +890,7 @@ func UpdateSdpCandidates(data []byte, candidates []string) []byte {
 	var hadCandidate bool
 	var sdp []string
 
-	//Println("[sdp] replace candidates, sdp lines=", len(lines))
+	//log.Println("[sdp] replace candidates, sdp lines=", len(lines))
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "m=") {
@@ -928,7 +929,7 @@ func GetSdpCandidates(data []byte) []string {
 	}
 
 	var candidates []string
-	//Println("[sdp] replace candidates, sdp lines=", len(lines))
+	//log.Println("[sdp] replace candidates, sdp lines=", len(lines))
 	for _, line := range lines {
 		if strings.HasPrefix(line, "a=candidate:") {
 			candidates = append(candidates, line)
@@ -942,7 +943,7 @@ func GetSdpCandidates(data []byte) []string {
 
 // a=candidate:1 1 udp 2113937151 192.168.1.1 5000 typ host
 // a=candidate:2 1 tcp 1518280447 192.168.1.1 443 typ host tcptype passive
-type Candidate struct {
+type SdpCandidate struct {
 	Foundation  string
 	ComponentId int    // 1-256, e.g., RTP-1, RTCP-2
 	Transport   string // udp/tcp
@@ -953,14 +954,14 @@ type Candidate struct {
 	NetType     string // network type
 }
 
-func ParseCandidates(lines []string) ([]Candidate, []string) {
-	var cands []Candidate
+func ParseSdpCandidates(lines []string) ([]SdpCandidate, []string) {
+	var cands []SdpCandidate
 	var candLines []string
 	for _, line := range lines {
 		if !strings.HasPrefix(line, "a=candidate:") {
 			continue
 		}
-		if cand := ParseCandidate(line); cand != nil {
+		if cand := ParseSdpCandidate(line); cand != nil {
 			cands = append(cands, *cand)
 			candLines = append(candLines, line)
 		}
@@ -968,10 +969,10 @@ func ParseCandidates(lines []string) ([]Candidate, []string) {
 	return cands, candLines
 }
 
-func ParseCandidate(line string) *Candidate {
+func ParseSdpCandidate(line string) *SdpCandidate {
 	items := strings.Split(line, " ")
 	if len(items) < 8 {
-		Warnln("[sdp] invalid sdp candidate:", line)
+		log.Println("[sdp] invalid sdp candidate:", line)
 		return nil
 	}
 	foundation := ""
@@ -988,7 +989,7 @@ func ParseCandidate(line string) *Candidate {
 		netType = strings.Join(items[8:], " ")
 	}
 
-	return &Candidate{
+	return &SdpCandidate{
 		foundation,
 		Atoi(items[1]), items[2], Atoi(items[3]), items[4], items[5],
 		candType,
@@ -996,16 +997,16 @@ func ParseCandidate(line string) *Candidate {
 	}
 }
 
-func ParseCandidateHost(line string) string {
-	if cand := ParseCandidate(line); cand != nil {
+func ParseSdpCandidateHost(line string) string {
+	if cand := ParseSdpCandidate(line); cand != nil {
 		return cand.RelAddr
 	} else {
 		return ""
 	}
 }
 
-func ParseCandidateIp(line string) string {
-	if host := ParseCandidateHost(line); len(host) > 0 {
+func ParseSdpCandidateIp(line string) string {
+	if host := ParseSdpCandidateHost(line); len(host) > 0 {
 		return LookupIP(host)
 	} else {
 		return ""
