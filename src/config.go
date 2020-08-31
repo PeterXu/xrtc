@@ -5,19 +5,22 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/PeterXu/xrtc/log"
 	"github.com/PeterXu/xrtc/util"
-	log "github.com/PeterXu/xrtc/util"
 	"github.com/PeterXu/xrtc/yaml"
 )
 
 const (
-	uTAG                 = "[CONFIG]"
-	kDefaultServerName   = "_"
-	kDefaultServerRoot   = "/tmp"
-	kDefaultConfig       = "/tmp/etc/routes.yml"
-	kTlsCrtFile          = "/tmp/etc/cert.pem"
-	kTlsKeyFile          = "/tmp/etc/cert.key"
-	kGeoLite2File        = "/tmp/etc/GeoLite2-City.mmdb"
+	uTAG                = "[CONFIG]"
+	kDefaultServerName  = "_"
+	kDefaultServerRoot  = "/tmp"
+	kDefaultConfig      = "/tmp/etc/routes.yml"
+	kDefaultCrtFile     = "/tmp/etc/cert.pem"
+	kDefaultKeyFile     = "/tmp/etc/cert.key"
+	kDefaultLogPath     = "/var/log/xrtc"
+	kDefaultGeoLiteFile = "/tmp/etc/GeoLite2-City.mmdb"
+
+	// marks
 	kRoutePublicHostMark = "route_public_host_ip"
 	kRouteInitAddrMark   = "route_init_addr"
 	kCandidateHostMark   = "candidate_host_ip"
@@ -36,39 +39,26 @@ func LoadConfig(fname string) *Config {
 /// hase config
 
 type CommonConfig struct {
-	Id      string
-	Name    string
-	CrtFile string
-	KeyFile string
+	Id          string
+	Name        string
+	CrtFile     string
+	KeyFile     string
+	GeoLiteFile string
+	LogPath     string
 }
 
 func NewCommonConfig() *CommonConfig {
 	return &CommonConfig{}
 }
 
-func (bc *CommonConfig) Load(service yaml.Map) error {
-	bc.Id = getYamlString(service, "id")
-	if len(bc.Id) == 0 {
-		bc.Id = util.SysUniqueId()
-	}
-	bc.Name = getYamlString(service, "name")
-	if len(bc.Name) == 0 {
-		bc.Name = util.SysHostname()
-	}
-	bc.CrtFile = getYamlString(service, "crt_file")
-	if len(bc.CrtFile) == 0 {
-		bc.CrtFile = kTlsCrtFile
-	}
-	bc.KeyFile = getYamlString(service, "key_file")
-	if len(bc.KeyFile) == 0 {
-		bc.KeyFile = kTlsKeyFile
-	}
+func (c *CommonConfig) Load(service yaml.Map) error {
+	c.Id = getYamlStringEx(service, "id", util.SysUniqueId())
+	c.Name = getYamlStringEx(service, "name", util.SysHostname())
+	c.CrtFile = getYamlStringEx(service, "crt_file", kDefaultCrtFile)
+	c.KeyFile = getYamlStringEx(service, "key_file", kDefaultKeyFile)
+	c.GeoLiteFile = getYamlStringEx(service, "geolite_file", kDefaultGeoLiteFile)
+	c.LogPath = getYamlStringEx(service, "log_path", kDefaultLogPath)
 	return nil
-}
-
-func (bc CommonConfig) String() string {
-	return fmt.Sprintf("Common{Id: %s, Name: %s, CrtKey: {%s,%s}}",
-		bc.Id, bc.Name, bc.CrtFile, bc.KeyFile)
 }
 
 /// mod config
@@ -102,7 +92,9 @@ func (mc *ModConfig) Load(service yaml.Map) error {
 	var err error
 	switch mc.Mod {
 	case "route":
-		mc.Route = &RouteNetParams{}
+		mc.Route = &RouteNetParams{
+			Location: NewGeoLocation(),
+		}
 		err = mc.Route.Load(service, mc.Addrs)
 	case "ice":
 		mc.Ice = &IceNetParams{}
@@ -134,6 +126,7 @@ func (mc ModConfig) String() string {
 /// Config
 
 type Config struct {
+	common  *CommonConfig
 	configs []*ModConfig
 }
 
@@ -163,7 +156,6 @@ func (c *Config) Load(fname string) bool {
 	}
 
 	// Check services
-	var commonCfg *CommonConfig
 	for _, mod := range yaml.Keys(services) {
 		service, err := getYamlMap(services, mod)
 		if err != nil {
@@ -173,13 +165,13 @@ func (c *Config) Load(fname string) bool {
 
 		log.Print2f(uTAG, ">>>parse service mod [%s]", mod)
 
-		if mod == "base" {
+		if mod == "common" {
 			cfg := NewCommonConfig()
 			if err := cfg.Load(service); err != nil {
 				log.Warn2f(uTAG, "check service [%s], err=%v", mod, err)
 				return false
 			}
-			commonCfg = cfg
+			c.common = cfg
 			continue
 		}
 
@@ -193,12 +185,12 @@ func (c *Config) Load(fname string) bool {
 	}
 	fmt.Println()
 
-	if commonCfg != nil {
-		log.Println(uTAG, "detail:", commonCfg)
+	if c.common != nil {
+		log.Println(uTAG, "detail:", c.common)
 	}
 	for _, cfg := range c.configs {
 		log.Println(uTAG, "detail:", cfg)
-		cfg.Common = commonCfg
+		cfg.Common = c.common
 		fmt.Println()
 	}
 	fmt.Println()
@@ -209,7 +201,7 @@ func (c *Config) Load(fname string) bool {
 // Net params
 
 type RouteNetParams struct {
-	Location     GeoLocation
+	Location     *GeoLocation
 	Capacity     uint32
 	_PublicHosts []string // "host"
 	PublicAddrs  []string // TODO: "proto://host:port"
@@ -243,14 +235,10 @@ func (n *RouteNetParams) Load(service yaml.Map, addrs []string) error {
 		parts := strings.Split(loc, ";")
 		for _, part := range parts {
 			if pair := util.ParseKeyValue(part, "="); pair != nil {
-				switch pair.First {
-				case "city":
-					n.Location.City = pair.Second
-				case "country":
-					n.Location.Country = pair.Second
-				}
+				n.Location.Add(pair.First, pair.Second)
 			}
 		}
+		log.Println(uTAG, "location:", loc, n.Location)
 	}
 	n.Capacity = uint32(yaml.ToInt(node.Key("capacity"), 0))
 
@@ -341,15 +329,8 @@ func (h *RestNetParams) Load(service yaml.Map) error {
 		return err
 	}
 
-	h.Servername = getYamlString(node, "servername")
-	if len(h.Servername) == 0 {
-		h.Servername = kDefaultServerName
-	}
-
-	h.Root = getYamlString(node, "root")
-	if len(h.Root) == 0 {
-		h.Root = kDefaultServerRoot
-	}
+	h.Servername = getYamlStringEx(node, "servername", kDefaultServerName)
+	h.Root = getYamlStringEx(node, "root", kDefaultServerRoot)
 	return nil
 }
 
@@ -361,6 +342,14 @@ func getYamlMap(node yaml.Map, key string) (yaml.Map, error) {
 
 func getYamlString(node yaml.Map, key string) string {
 	return yaml.ToString(node.Key(key))
+}
+
+func getYamlStringEx(node yaml.Map, key, value string) string {
+	tmp := getYamlString(node, key)
+	if len(tmp) == 0 {
+		tmp = value
+	}
+	return tmp
 }
 
 func getYamlListString(node yaml.Map, key string) []string {

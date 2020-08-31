@@ -2,7 +2,6 @@ package util
 
 import (
 	"errors"
-	"log"
 	"net"
 	"os"
 	"strings"
@@ -96,7 +95,7 @@ func SetSocketReuseAddr(sock SocketFD) {
 	if file, err := sock.File(); err == nil {
 		syscall.SetsockoptInt(int(file.Fd()), syscall.SOL_SOCKET, syscall.SO_REUSEADDR, 1)
 	} else {
-		log.Println(uTAG, "set reuse addr err=", err)
+		LogWarnln(uTAG, "set reuse addr err=", err)
 	}
 }
 
@@ -131,11 +130,11 @@ func LocalIP() (net.IP, error) {
 func LocalIPString() string {
 	ip, err := LocalIP()
 	if err != nil {
-		log.Println(uTAG, "Error determining local ip address. ", err)
+		LogWarnln(uTAG, "Error determining local ip address. ", err)
 		return ""
 	}
 	if ip == nil {
-		log.Println(uTAG, "Could not determine local ip address")
+		LogWarnln(uTAG, "Could not determine local ip address")
 		return ""
 	}
 	return ip.String()

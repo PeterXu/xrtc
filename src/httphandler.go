@@ -8,9 +8,9 @@ import (
 	"net/url"
 	"strings"
 
-	log "github.com/PeterXu/xrtc/util"
-	util "github.com/PeterXu/xrtc/util"
-	uuid "github.com/PeterXu/xrtc/uuid"
+	"github.com/PeterXu/xrtc/log"
+	"github.com/PeterXu/xrtc/util"
+	"github.com/PeterXu/xrtc/uuid"
 )
 
 const (

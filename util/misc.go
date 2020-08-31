@@ -1,7 +1,6 @@
 package util
 
 import (
-	"log"
 	"net"
 	"os"
 )
@@ -9,7 +8,7 @@ import (
 func SysHostname() string {
 	hostname, err := os.Hostname()
 	if err != nil {
-		log.Println("fail to get hostname")
+		LogWarnln("fail to get hostname")
 		hostname = RandomString(10)
 	}
 	return hostname
@@ -18,7 +17,7 @@ func SysHostname() string {
 func SysUniqueId() string {
 	hostname, err := os.Hostname()
 	if err != nil {
-		log.Println("fail to get hostname")
+		LogWarnln("fail to get hostname")
 		hostname = RandomString(10)
 	}
 	var macaddr string
@@ -37,7 +36,7 @@ func SysUniqueId() string {
 		}
 	}
 	if len(macaddr) == 0 {
-		log.Println("no hwmac addr")
+		LogWarnln("no hwmac addr")
 		macaddr = RandomString(20)
 	}
 

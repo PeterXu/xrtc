@@ -5,10 +5,9 @@ import (
 	"net"
 	"time"
 
-	proto "github.com/golang/protobuf/proto"
-
+	"github.com/PeterXu/xrtc/log"
 	"github.com/PeterXu/xrtc/util"
-	log "github.com/PeterXu/xrtc/util"
+	"github.com/golang/protobuf/proto"
 )
 
 /// Route Service
@@ -217,7 +216,7 @@ func (s *RouteService) processPacket(data []byte, from ServiceHandler) error {
 		} else {
 			pbRtt := packet.GetRtt()
 			if pbRtt != nil {
-				rttVal := int(util.NowMs64() - pbRtt.GetReqTime() - pbRtt.GetDelta())
+				rttVal := int(util.NowMs() - pbRtt.GetReqTime() - pbRtt.GetDelta())
 				node.rtt = rttVal
 			}
 		}

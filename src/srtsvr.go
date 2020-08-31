@@ -3,8 +3,8 @@ package webrtc
 import (
 	"time"
 
+	"github.com/PeterXu/xrtc/log"
 	"github.com/PeterXu/xrtc/util"
-	log "github.com/PeterXu/xrtc/util"
 	"github.com/haivision/srtgo"
 )
 

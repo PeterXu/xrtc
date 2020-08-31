@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/PeterXu/xrtc/log"
 	"github.com/PeterXu/xrtc/nice"
 	"github.com/PeterXu/xrtc/util"
-	log "github.com/PeterXu/xrtc/util"
 )
 
 type IceAgent struct {

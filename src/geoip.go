@@ -5,28 +5,57 @@ import (
 	"fmt"
 	"net"
 
-	log "github.com/PeterXu/xrtc/util"
+	"github.com/PeterXu/xrtc/log"
 	"github.com/oschwald/geoip2-golang"
 )
 
 var gGeoDB *geoip2.Reader
 
-func init() {
-	if db, err := geoip2.Open(kGeoLite2File); err == nil {
-		gGeoDB = db
-	} else {
-		log.Warnln(err)
-		fmt.Println()
+func initGeoLite(fname string) {
+	if gGeoDB == nil {
+		log.Println("[GEO] init geolite:", fname)
+		if db, err := geoip2.Open(fname); err == nil {
+			gGeoDB = db
+		} else {
+			log.Warnln(err)
+			fmt.Println()
+		}
 	}
 }
 
 type GeoLocation struct {
-	City    string
-	Country string
+	attrs map[string]string
+}
+
+func NewGeoLocation() *GeoLocation {
+	return &GeoLocation{
+		attrs: make(map[string]string),
+	}
+}
+
+func (loc *GeoLocation) Add(key, value string) {
+	loc.attrs[key] = value
+}
+
+func (loc *GeoLocation) Get(key string) string {
+	if val, ok := loc.attrs[key]; ok {
+		return val
+	}
+	return ""
 }
 
 func (loc *GeoLocation) String() string {
-	return fmt.Sprintf("city=%s;country=%s", loc.City, loc.Country)
+	var szline string
+	if loc.attrs != nil {
+		for key, value := range loc.attrs {
+			attr := fmt.Sprintf("%s=%s", key, value)
+			if len(szline) > 0 {
+				szline = szline + ";"
+			}
+			szline = szline + attr
+		}
+	}
+	return szline
 }
 
 func parseGeoLocation(ipstr string) (*GeoLocation, error) {
@@ -34,7 +63,10 @@ func parseGeoLocation(ipstr string) (*GeoLocation, error) {
 		if rd, err := db.City(net.ParseIP(ipstr)); err == nil {
 			ct, _ := rd.City.Names["en"]
 			cn, _ := rd.Country.Names["en"]
-			return &GeoLocation{ct, cn}, nil
+			loc := NewGeoLocation()
+			loc.Add("city", ct)
+			loc.Add("country", cn)
+			return loc, nil
 		} else {
 			return nil, err
 		}
@@ -64,15 +96,18 @@ func checkGeoOptimal(srcIP, proxyIP, dstIP string) bool {
 	}
 
 	log.Println("[geoip]", srcLoc, proxyLoc, dstLoc)
+	srcCN := srcLoc.Get("country")
+	proxyCN := proxyLoc.Get("country")
+	dstCN := dstLoc.Get("country")
 
-	if len(srcLoc.Country) == 0 || len(dstLoc.Country) == 0 {
+	if len(srcCN) == 0 || len(dstCN) == 0 {
 		// maybe src or dst is local ip.
 		// That means: src euqal-to mid, or mid euqal-to dst.
 		// Donot need to change.
 		return false
 	}
 
-	if srcLoc.Country != dstLoc.Country && srcLoc.Country == proxyLoc.Country {
+	if srcCN != dstCN && srcCN == proxyCN {
 		// a) different country between src and dst,
 		// b) the same country for src and mid,
 		// And the connection of (mid-dst) works better than (src-dst) in general.

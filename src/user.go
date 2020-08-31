@@ -1,9 +1,13 @@
 package webrtc
 
 import (
+	"github.com/PeterXu/xrtc/log"
 	"github.com/PeterXu/xrtc/util"
-	log "github.com/PeterXu/xrtc/util"
 )
+
+/// There are two modes:
+///     a) proxy mode: client -> proxy -> server
+///     b) route mode: client -> proxy .. proxy -> server
 
 type LinkMode int
 
@@ -15,8 +19,9 @@ const (
 )
 
 type User struct {
-	TAG string
+	*ObjTime
 
+	TAG         string
 	linkMode    LinkMode
 	iceTcp      bool                   // connect with webrtc server by tcp/udp
 	iceDirect   bool                   // forward ice stun between outer and inner
@@ -28,20 +33,15 @@ type User struct {
 	activeConn *Connection // active conn
 	sendIce    util.SdpIceAttr
 	recvIce    util.SdpIceAttr
-
-	utime uint64 // update time
-	ctime uint64 // create time
 }
 
 func NewUser(linkMode LinkMode) *User {
-	now := util.NowMs64()
 	return &User{
+		ObjTime:     NewObjTime(),
 		TAG:         "[USER]",
 		linkMode:    linkMode,
 		connections: make(map[string]*Connection),
 		chanSend:    make(chan interface{}, 100),
-		utime:       now,
-		ctime:       now,
 	}
 }
 

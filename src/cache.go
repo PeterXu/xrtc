@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	log "github.com/PeterXu/xrtc/util"
+	"github.com/PeterXu/xrtc/log"
 )
 
 type Cache struct {

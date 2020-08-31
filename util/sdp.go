@@ -1,7 +1,6 @@
 package util
 
 import (
-	"log"
 	"strings"
 )
 
@@ -146,26 +145,34 @@ type SdpSctpInfo struct {
 	is_sctpmap bool
 }
 
-func NewSdpMediaAttr(mtype, proto string) *SdpMediaAttr {
-	return &SdpMediaAttr{mtype: mtype, proto: proto,
-		fmtps:      make(map[int]*SdpFmtpInfo),
-		av_rtpmaps: make(map[string]*SdpRtpMapInfo)}
+// SDP ice: a=ice-..
+type SdpIceAttr struct {
+	Ufrag   string // a=ice-ufrag:..
+	Pwd     string // a=ice-pwd:..
+	Options string // a=ice-options:..
 }
 
-type SdpIceAttr struct {
-	Ufrag   string
-	Pwd     string
-	Options string
+// SDP m=
+type SdpMLine struct {
+	mtype  string   // m=
+	proto  string   // m=
+	ptypes []string // m=
+}
+
+func NewSdpMediaAttr(mtype, proto string) *SdpMediaAttr {
+	attr := &SdpMediaAttr{
+		fmtps: make(map[int]*SdpFmtpInfo),
+	}
+	attr.mtype = mtype
+	attr.proto = proto
+	attr.av_rtpmaps = make(map[string]*SdpRtpMapInfo)
+	return attr
 }
 
 // SDP media attribute lines
 type SdpMediaAttr struct {
-	mtype            string               // m=
-	proto            string               // m=
-	ptypes           []string             // m=
-	ice_ufrag        string               // a=ice-ufrag:..
-	ice_pwd          string               // a=ice-pwd:..
-	ice_options      string               // a=ice-options:..
+	SdpMLine                              // m=..
+	ice_attr         SdpIceAttr           // a=ice-
 	fingerprint      StringPair           // a=fingerprint:sha-256 ..
 	setup            string               // a=setup:..
 	direction        SdpMediaDirection    // a=sendrecv/sendonly/recvonly
@@ -183,16 +190,19 @@ type SdpMediaAttr struct {
 	sctp             *SdpSctpInfo         // a=sctpmap: or a=sctp-port:
 	max_message_size int                  // a=max-message-size:
 	candidates       []string             // a=candidate:
-	maxptime         int
+	maxptime         int                  // a=maxptime:
 
-	// for anwser
-	av_rtpmaps   map[string]*SdpRtpMapInfo
-	av_ice_ufrag string
-	av_ice_pwd   string
-	use_rtx      bool
-	use_red_fec  bool
-	use_red_rtx  bool
-	use_fid      bool
+	SdpMediaAnswer
+}
+
+// for anwser
+type SdpMediaAnswer struct {
+	av_rtpmaps  map[string]*SdpRtpMapInfo
+	av_ice_attr SdpIceAttr
+	use_rtx     bool
+	use_red_fec bool
+	use_red_rtx bool
+	use_fid     bool
 }
 
 func (a *SdpMediaAttr) GetSsrcs() *SdpSsrc {
@@ -230,11 +240,11 @@ func (m *SdpAll) parseSdp(data []byte) bool {
 		lines = strings.Split(string(data), "\n")
 	}
 
-	//log.Println("[sdp] parseSdp, lines=", len(lines))
+	//LogPrintln("[sdp] parseSdp, lines=", len(lines))
 	for item := range lines {
 		line := []byte(lines[item])
 		if len(line) <= 2 || line[1] != '=' {
-			//log.Println("invalid sdp line: ", string(line))
+			//LogWarnln("invalid sdp line: ", string(line))
 			continue
 		}
 
@@ -289,7 +299,7 @@ func (m *SdpAll) parseSdp_a(line []byte, media *SdpMediaAttr) {
 		}
 
 		if media == nil {
-			log.Println("[sdp] no valid media for line=", string(line[:]))
+			LogWarnln("[sdp] no valid media for line=", string(line[:]))
 			return
 		}
 
@@ -311,7 +321,7 @@ func (m *SdpAll) parseSdp_a(line []byte, media *SdpMediaAttr) {
 
 	if akey == "group" {
 		attrs := strings.Split(fields[1], " ")
-		//log.Println("[sdp] a=group:", attrs, len(attrs))
+		//LogPrintln("[sdp] a=group:", attrs, len(attrs))
 		if len(attrs) >= 1 {
 			aval := strings.ToLower(attrs[0])
 			switch aval {
@@ -320,7 +330,7 @@ func (m *SdpAll) parseSdp_a(line []byte, media *SdpMediaAttr) {
 					m.group_bundles = append(m.group_bundles, attrs[1:]...)
 				}
 			default:
-				log.Println("[sdp] unsupported attr - a=group:", aval)
+				LogWarnln("[sdp] unsupported attr - a=group:", aval)
 			}
 		}
 		return
@@ -351,18 +361,18 @@ func (m *SdpAll) parseSdp_a(line []byte, media *SdpMediaAttr) {
 			return
 		}
 
-		log.Println("[sdp] no valid media for line=", string(line[:]))
+		LogWarnln("[sdp] no valid media for line=", string(line[:]))
 		return
 	}
 
 	if akey == "rtcp" {
 		// nop
 	} else if akey == "ice-ufrag" {
-		media.ice_ufrag = strings.TrimSpace(fields[1])
+		media.ice_attr.Ufrag = strings.TrimSpace(fields[1])
 	} else if akey == "ice-pwd" {
-		media.ice_pwd = strings.TrimSpace(fields[1])
+		media.ice_attr.Pwd = strings.TrimSpace(fields[1])
 	} else if akey == "ice-options" {
-		media.ice_options = fields[1]
+		media.ice_attr.Options = fields[1]
 	} else if akey == "fingerprint" {
 		attrs := strings.SplitN(fields[1], " ", 2)
 		if len(attrs) == 2 {
@@ -472,7 +482,7 @@ func (m *SdpAll) parseSdp_a(line []byte, media *SdpMediaAttr) {
 	} else if akey == "maxptime" {
 		media.maxptime = Atoi(fields[1])
 	} else {
-		log.Println("[sdp] unsupported attr=", akey)
+		LogWarnln("[sdp] unsupported attr=", akey)
 	}
 }
 
@@ -503,13 +513,13 @@ func (m *SdpDesc) GetMediaType() SdpMediaType {
 func (m *SdpDesc) GetUfrag() string {
 	mt := m.GetMediaType()
 	if (mt & kSdpMediaAudio) != 0 {
-		return m.Sdp.audios[0].ice_ufrag
+		return m.Sdp.audios[0].ice_attr.Ufrag
 	} else if (mt & kSdpMediaVideo) != 0 {
-		return m.Sdp.videos[0].ice_ufrag
+		return m.Sdp.videos[0].ice_attr.Ufrag
 	} else if (mt & kSdpMediaApplication) != 0 {
-		return m.Sdp.applications[0].ice_ufrag
+		return m.Sdp.applications[0].ice_attr.Ufrag
 	} else {
-		log.Println("[desc] invalid media type = ", mt)
+		LogWarnln("[desc] invalid media type = ", mt)
 		return ""
 	}
 }
@@ -517,13 +527,13 @@ func (m *SdpDesc) GetUfrag() string {
 func (m *SdpDesc) GetPwd() string {
 	mt := m.GetMediaType()
 	if (mt & kSdpMediaAudio) != 0 {
-		return m.Sdp.audios[0].ice_pwd
+		return m.Sdp.audios[0].ice_attr.Pwd
 	} else if (mt & kSdpMediaVideo) != 0 {
-		return m.Sdp.videos[0].ice_pwd
+		return m.Sdp.videos[0].ice_attr.Pwd
 	} else if (mt & kSdpMediaApplication) != 0 {
-		return m.Sdp.applications[0].ice_pwd
+		return m.Sdp.applications[0].ice_attr.Pwd
 	} else {
-		log.Println("[desc] invalid media type = ", mt)
+		LogWarnln("[desc] invalid media type = ", mt)
 		return ""
 	}
 }
@@ -531,13 +541,13 @@ func (m *SdpDesc) GetPwd() string {
 func (m *SdpDesc) GetOptions() string {
 	mt := m.GetMediaType()
 	if (mt & kSdpMediaAudio) != 0 {
-		return m.Sdp.audios[0].ice_options
+		return m.Sdp.audios[0].ice_attr.Options
 	} else if (mt & kSdpMediaVideo) != 0 {
-		return m.Sdp.videos[0].ice_options
+		return m.Sdp.videos[0].ice_attr.Options
 	} else if (mt & kSdpMediaApplication) != 0 {
-		return m.Sdp.applications[0].ice_options
+		return m.Sdp.applications[0].ice_attr.Options
 	} else {
-		log.Println("[desc] invalid media type = ", mt)
+		LogWarnln("[desc] invalid media type = ", mt)
 		return ""
 	}
 }
@@ -551,7 +561,7 @@ func (m *SdpDesc) GetCandidates() []string {
 	} else if (mt & kSdpMediaApplication) != 0 {
 		return m.Sdp.applications[0].candidates
 	} else {
-		log.Println("[desc] invalid media type = ", mt)
+		LogWarnln("[desc] invalid media type = ", mt)
 		return nil
 	}
 }
@@ -565,8 +575,8 @@ func (m *SdpDesc) CreateAnswer() bool {
 	if len(m.Sdp.applications) > 0 {
 		for i := range m.Sdp.applications {
 			app := m.Sdp.applications[i]
-			app.av_ice_ufrag = send_ice_ufrag
-			app.av_ice_pwd = send_ice_pwd
+			app.av_ice_attr.Ufrag = send_ice_ufrag
+			app.av_ice_attr.Pwd = send_ice_pwd
 			ret = true
 		}
 	}
@@ -590,8 +600,8 @@ func (m *SdpDesc) CreateAnswer() bool {
 				}
 			}
 			if have_opus || have_isac {
-				audio.av_ice_ufrag = send_ice_ufrag
-				audio.av_ice_pwd = send_ice_pwd
+				audio.av_ice_attr.Ufrag = send_ice_ufrag
+				audio.av_ice_attr.Pwd = send_ice_pwd
 				ret = true
 				break
 			}
@@ -623,8 +633,8 @@ func (m *SdpDesc) CreateAnswer() bool {
 					video.use_fid = true
 				}
 
-				video.av_ice_ufrag = send_ice_ufrag
-				video.av_ice_pwd = send_ice_pwd
+				video.av_ice_attr.Ufrag = send_ice_ufrag
+				video.av_ice_attr.Pwd = send_ice_pwd
 				ret = true
 				break
 			}
@@ -682,14 +692,14 @@ func (m *SdpDesc) AnswerSdp() string {
 
 	bundles := "a=group:BUNDLE"
 	semantics := "a=msid-semantic:WMS"
-	log.Println("[desc] all bundles: ", m.Sdp.group_bundles)
+	LogPrintln("[desc] all bundles: ", m.Sdp.group_bundles)
 
 	var body []string
 	var oldSdp bool = true
 	for i := range m.Sdp.group_bundles {
 		bundle := m.Sdp.group_bundles[i]
 		bundles += " " + bundle
-		log.Println("[desc] one media bundle=", bundle)
+		LogPrintln("[desc] one media bundle=", bundle)
 
 		// check m=audio
 		for j := range m.Sdp.audios {
@@ -703,8 +713,8 @@ func (m *SdpDesc) AnswerSdp() string {
 				mline += " 126" // add telephone-event
 				body = append(body, mline)
 				body = append(body, "c=IN IP4 0.0.0.0")
-				body = append(body, "a=ice-ufrag:"+audio.av_ice_ufrag)
-				body = append(body, "a=ice-pwd:"+audio.av_ice_pwd)
+				body = append(body, "a=ice-ufrag:"+audio.av_ice_attr.Ufrag)
+				body = append(body, "a=ice-pwd:"+audio.av_ice_attr.Pwd)
 				body = append(body, "a=fingerprint:"+audio.fingerprint.ToStringBySpace())
 				body = append(body, "a=setup:passive")
 				aextmap := "a=extmap:"
@@ -755,8 +765,8 @@ func (m *SdpDesc) AnswerSdp() string {
 			if app.mid == bundle {
 				body = append(body, "m=application 9 "+app.proto+" "+app.ptypes[0])
 				body = append(body, "c=IN IP4 0.0.0.0")
-				body = append(body, "a=ice-ufrag:"+app.av_ice_ufrag)
-				body = append(body, "a=ice-pwd:"+app.av_ice_pwd)
+				body = append(body, "a=ice-ufrag:"+app.av_ice_attr.Ufrag)
+				body = append(body, "a=ice-pwd:"+app.av_ice_attr.Pwd)
 				body = append(body, "a=fingerprint:"+app.fingerprint.ToStringBySpace())
 				body = append(body, "a=setup:passive")
 				body = append(body, "a=mid:"+bundle)
@@ -800,8 +810,8 @@ func (m *SdpDesc) AnswerSdp() string {
 
 				body = append(body, "c=IN IP4 0.0.0.0")
 				body = append(body, "b=AS:1500") // refine
-				body = append(body, "a=ice-ufrag:"+video.av_ice_ufrag)
-				body = append(body, "a=ice-pwd:"+video.av_ice_pwd)
+				body = append(body, "a=ice-ufrag:"+video.av_ice_attr.Ufrag)
+				body = append(body, "a=ice-pwd:"+video.av_ice_attr.Pwd)
 				body = append(body, "a=fingerprint:"+video.fingerprint.ToStringBySpace())
 				body = append(body, "a=setup:passive")
 				body = append(body, "a=mid:"+bundle)
@@ -890,7 +900,7 @@ func UpdateSdpCandidates(data []byte, candidates []string) []byte {
 	var hadCandidate bool
 	var sdp []string
 
-	//log.Println("[sdp] replace candidates, sdp lines=", len(lines))
+	//LogPrintln("[sdp] replace candidates, sdp lines=", len(lines))
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "m=") {
@@ -929,7 +939,7 @@ func GetSdpCandidates(data []byte) []string {
 	}
 
 	var candidates []string
-	//log.Println("[sdp] replace candidates, sdp lines=", len(lines))
+	//LogPrintln("[sdp] replace candidates, sdp lines=", len(lines))
 	for _, line := range lines {
 		if strings.HasPrefix(line, "a=candidate:") {
 			candidates = append(candidates, line)
@@ -972,7 +982,7 @@ func ParseSdpCandidates(lines []string) ([]SdpCandidate, []string) {
 func ParseSdpCandidate(line string) *SdpCandidate {
 	items := strings.Split(line, " ")
 	if len(items) < 8 {
-		log.Println("[sdp] invalid sdp candidate:", line)
+		LogWarnln("[sdp] invalid sdp candidate:", line)
 		return nil
 	}
 	foundation := ""

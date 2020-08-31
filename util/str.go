@@ -15,15 +15,15 @@ func SubString(str string, pos int, size int) string {
 	return string(s[:size])
 }
 
+type IntPair struct {
+	First  int
+	Second int
+}
+
 // like c++ std::pair
 type StringPair struct {
 	First  string
 	Second string
-}
-
-type IntPair struct {
-	First  int
-	Second int
 }
 
 func (sp StringPair) ToStringBySpace() string {

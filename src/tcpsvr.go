@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/PeterXu/xrtc/log"
 	"github.com/PeterXu/xrtc/util"
-	log "github.com/PeterXu/xrtc/util"
 )
 
 type TcpServer struct {

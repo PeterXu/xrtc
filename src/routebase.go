@@ -40,7 +40,7 @@ func createRoutePacket(pbType RouteDataType, fromId string, seqNo uint32) *Route
 	var pbRtt *RouteDataRtt
 	if pbType == RouteDataType_RouteDataInit ||
 		pbType == RouteDataType_RouteDataCheck {
-		nowTime := util.NowMs64()
+		nowTime := util.NowMs()
 		pbRtt = &RouteDataRtt{
 			ReqTime: &nowTime,
 		}
@@ -53,16 +53,16 @@ func createRoutePacket(pbType RouteDataType, fromId string, seqNo uint32) *Route
 	}
 }
 
-func createRouteAckPacket(recvPkt *RoutePacket, fromId string, arrivalTime uint64) *RoutePacket {
+func createRouteAckPacket(recvPkt *RoutePacket, fromId string, arrivalTime int64) *RoutePacket {
 	pbType := recvPkt.GetType() + 1
 	seqNo := recvPkt.GetSeqNo() + 1
-	reqTime := uint64(0)
-	delta := uint64(0)
+	reqTime := int64(0)
+	delta := int64(0)
 	pbRtt := recvPkt.GetRtt()
 	if pbRtt != nil {
 		reqTime = pbRtt.GetReqTime()
 		if arrivalTime > 0 {
-			delta = util.NowMs64() - arrivalTime
+			delta = util.NowMs() - arrivalTime
 		}
 	}
 	if pbRtt != nil { // reset

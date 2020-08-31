@@ -3,11 +3,7 @@
 // Based-on https://github.com/fabiolb/fabio/proxy/uuid.
 package uuid
 
-import (
-	"github.com/rogpeppe/fastuuid"
-)
-
-var generator = fastuuid.MustNewGenerator()
+var generator = MustNewGenerator()
 
 // NewUUID return UUID in string fromat
 func NewUUID() string {

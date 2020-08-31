@@ -5,8 +5,8 @@ import (
 	"net"
 	"time"
 
+	"github.com/PeterXu/xrtc/log"
 	"github.com/PeterXu/xrtc/util"
-	log "github.com/PeterXu/xrtc/util"
 )
 
 const kDefaultConnectionTimeout = 30 * 1000 // ms
@@ -20,7 +20,7 @@ type Connection struct {
 	chanSend chan interface{}
 	user     *User
 
-	stunRequesting         uint64
+	stunRequesting         int64
 	hadStunChecking        bool
 	hadStunBindingResponse bool
 	leave                  bool
@@ -162,7 +162,7 @@ func (c *Connection) checkStunBindingRequest() {
 					break exitLoop
 				}
 
-				if delta := util.NowMs64() - c.utime; delta >= (15 * 1000) {
+				if delta := util.NowMs() - c.utime; delta >= (15 * 1000) {
 					log.Warnln(c.TAG, "(timeout) no response from client and quit")
 					break exitLoop
 				} else if delta > (5 * 1000) {

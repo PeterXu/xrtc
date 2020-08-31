@@ -4,13 +4,15 @@ services:
         name: xrtc01
         crt_file: /tmp/etc/cert.pem
         key_file: /tmp/etc/cert.key
+        geolite_file: /tmp/etc/GeoLite2-City.mmdb
+        log_path: /var/log/xrtc
 
     route:
         name: routesvr
         addrs:
             - srt://:9527
         route:
-            location: "country=cn;city=hefei"
+            location: country=cn;city=hefei
             capacity: 100
             public_hosts: 
               - route_public_host_ip

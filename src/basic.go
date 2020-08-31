@@ -36,25 +36,25 @@ func NewObjMessageStatus(status ObjStatusType, misc interface{}) *ObjMessage {
 /// object time
 
 type ObjTime struct {
-	utime uint64 // update time
-	ctime uint64 // create time
+	utime int64 // update time
+	ctime int64 // create time
 }
 
 func NewObjTime() *ObjTime {
-	now := util.NowMs64()
+	now := util.NowMs()
 	return &ObjTime{now, now}
 }
 
 func (o *ObjTime) UpdateTime() {
-	o.utime = util.NowMs64()
+	o.utime = util.NowMs()
 }
 
 func (o *ObjTime) CheckTimeout(timeout int) bool {
 	if timeout <= 0 {
 		timeout = kDefaultTimeout
 	}
-	now := util.NowMs64()
-	return now >= o.utime+uint64(timeout)
+	now := util.NowMs()
+	return now >= o.utime+int64(timeout)
 }
 
 /// obj status
@@ -108,14 +108,14 @@ func (o *ObjStatus) SetClose() {
 type NetStat struct {
 	sendPackets int
 	sendBytes   uint64
-	sendTime    uint64
+	sendTime    int64
 	recvPackets int
 	recvBytes   uint64
-	recvTime    uint64
+	recvTime    int64
 }
 
 func NewNetStat(send, recv int) *NetStat {
-	now := util.NowMs64()
+	now := util.NowMs()
 	return &NetStat{1, uint64(send), now, 1, uint64(recv), now}
 }
 
@@ -123,21 +123,21 @@ func (n *NetStat) CheckTimeout(timeout int) bool {
 	if timeout <= 0 {
 		timeout = kDefaultTimeout
 	}
-	to := uint64(timeout)
-	now := util.NowMs64()
+	to := int64(timeout)
+	now := util.NowMs()
 	return (now >= n.sendTime+to) && (now >= n.recvTime+to)
 }
 
 func (n *NetStat) UpdateSend(bytes int) {
 	n.sendPackets += 1
 	n.sendBytes += uint64(bytes)
-	n.sendTime = util.NowMs64()
+	n.sendTime = util.NowMs()
 }
 
 func (n *NetStat) UpdateRecv(bytes int) {
 	n.recvPackets += 1
 	n.recvBytes += uint64(bytes)
-	n.recvTime = util.NowMs64()
+	n.recvTime = util.NowMs()
 }
 
 func (n NetStat) String() string {

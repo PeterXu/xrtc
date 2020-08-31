@@ -5,7 +5,6 @@ package util
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"os/signal"
 	"sync"
@@ -35,16 +34,16 @@ func AppListen(fn func(os.Signal)) {
 			case sig = <-sigchan:
 				switch sig {
 				case syscall.SIGHUP:
-					Println(uTAG, "Caught SIGHUP. Ignoring")
+					LogWarnln(uTAG, "Caught SIGHUP. Ignoring")
 					continue
 				case os.Interrupt:
 					fmt.Println()
-					Println(uTAG, "Caught SIGINT. Exiting")
+					LogWarnln(uTAG, "Caught SIGINT. Exiting")
 				case syscall.SIGTERM:
-					Println(uTAG, "Caught SIGTERM. Exiting")
+					LogWarnln(uTAG, "Caught SIGTERM. Exiting")
 				default:
 					// fallthrough in case we forgot to add a switch clause.
-					Print2f(uTAG, "Caught signal %v. Exiting", sig)
+					LogWarnln(uTAG, "Caught signal. Exiting", sig)
 				}
 			case <-app_quit:
 			}
@@ -70,13 +69,13 @@ func AppExit(code int) {
 // the closure of all registered exit handlers and waits
 // for their completion and then call os.Exit(1).
 func AppFatal(v ...interface{}) {
-	log.Print(v...)
+	LogPrint(v...)
 	AppExit(1)
 }
 
 // Fatalf is a replacement for log.Fatalf and behaves like Fatal.
 func AppFatalf(format string, v ...interface{}) {
-	log.Printf(format, v...)
+	LogPrintf(format, v...)
 	AppExit(1)
 }
 

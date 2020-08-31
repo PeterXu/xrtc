@@ -14,7 +14,7 @@
 // The Panic functions call panic after writing the log message.
 //
 // Based-on https://golang.org/pkg/log.
-package util
+package log
 
 import (
 	"fmt"
@@ -75,8 +75,6 @@ func (l *Logger) SetOutput(w io.Writer) {
 	defer l.mu.Unlock()
 	l.out = w
 }
-
-var std = NewLogger(os.Stderr, "", LstdFlags)
 
 // Cheap integer to fixed-width decimal ASCII. Give a negative width to avoid zero-padding.
 func itoa(buf *[]byte, i int, wid int) {
@@ -190,37 +188,78 @@ func (l *Logger) Output(calldepth int, s string) error {
 // Printf calls l.Output to print to the logger.
 // Arguments are handled in the manner of fmt.Printf.
 func (l *Logger) Printf(format string, v ...interface{}) {
+	l.SetLevel(InfoLevel)
 	l.Output(2, fmt.Sprintf(format, v...))
 }
 
 // Print calls l.Output to print to the logger.
 // Arguments are handled in the manner of fmt.Print.
-func (l *Logger) Print(v ...interface{}) { l.Output(2, fmt.Sprint(v...)) }
+func (l *Logger) Print(v ...interface{}) {
+	l.SetLevel(InfoLevel)
+	l.Output(2, fmt.Sprint(v...))
+}
 
 // Println calls l.Output to print to the logger.
 // Arguments are handled in the manner of fmt.Println.
-func (l *Logger) Println(v ...interface{}) { l.Output(2, fmt.Sprintln(v...)) }
+func (l *Logger) Println(v ...interface{}) {
+	l.SetLevel(InfoLevel)
+	l.Output(2, fmt.Sprintln(v...))
+}
+
+func (l *Logger) Warnf(format string, v ...interface{}) {
+	l.SetLevel(WarnLevel)
+	l.Output(2, fmt.Sprintf(format, v...))
+}
+
+func (l *Logger) Warn(v ...interface{}) {
+	l.SetLevel(WarnLevel)
+	l.Output(2, fmt.Sprint(v...))
+}
+
+func (l *Logger) Warnln(v ...interface{}) {
+	l.SetLevel(WarnLevel)
+	l.Output(2, fmt.Sprintln(v...))
+}
+
+func (l *Logger) Errorf(format string, v ...interface{}) {
+	l.SetLevel(ErrorLevel)
+	l.Output(2, fmt.Sprintf(format, v...))
+}
+
+func (l *Logger) Error(v ...interface{}) {
+	l.SetLevel(ErrorLevel)
+	l.Output(2, fmt.Sprint(v...))
+}
+
+func (l *Logger) Errorln(v ...interface{}) {
+	l.SetLevel(ErrorLevel)
+	l.Output(2, fmt.Sprintln(v...))
+}
 
 // Fatal is equivalent to l.Print() followed by a call to os.Exit(1).
 func (l *Logger) Fatal(v ...interface{}) {
+	l.SetLevel(FatalLevel)
 	l.Output(2, fmt.Sprint(v...))
 	os.Exit(1)
 }
 
 // Fatalf is equivalent to l.Printf() followed by a call to os.Exit(1).
 func (l *Logger) Fatalf(format string, v ...interface{}) {
+	l.SetLevel(FatalLevel)
 	l.Output(2, fmt.Sprintf(format, v...))
 	os.Exit(1)
 }
 
 // Fatalln is equivalent to l.Println() followed by a call to os.Exit(1).
 func (l *Logger) Fatalln(v ...interface{}) {
+	l.SetLevel(FatalLevel)
 	l.Output(2, fmt.Sprintln(v...))
 	os.Exit(1)
 }
 
 // Panic is equivalent to l.Print() followed by a call to panic().
 func (l *Logger) Panic(v ...interface{}) {
+	l.SetLevel(PanicLevel)
 	s := fmt.Sprint(v...)
 	l.Output(2, s)
 	panic(s)
@@ -228,6 +267,7 @@ func (l *Logger) Panic(v ...interface{}) {
 
 // Panicf is equivalent to l.Printf() followed by a call to panic().
 func (l *Logger) Panicf(format string, v ...interface{}) {
+	l.SetLevel(PanicLevel)
 	s := fmt.Sprintf(format, v...)
 	l.Output(2, s)
 	panic(s)
@@ -235,6 +275,7 @@ func (l *Logger) Panicf(format string, v ...interface{}) {
 
 // Panicln is equivalent to l.Println() followed by a call to panic().
 func (l *Logger) Panicln(v ...interface{}) {
+	l.SetLevel(PanicLevel)
 	s := fmt.Sprintln(v...)
 	l.Output(2, s)
 	panic(s)
@@ -342,6 +383,14 @@ func (level LogLevel) String() string {
 	return "unknown"
 }
 
+/// Default std output
+
+var std = NewLogger(os.Stderr, "", LstdFlags)
+
+func GetObject() *Logger {
+	return std
+}
+
 // SetDefault sets the output options for the standard logger.
 func SetLogDefault() {
 	SetLogFlags(Ldate | Ltime | Lcolor)
@@ -376,121 +425,71 @@ func SetLogPrefix(prefix string) {
 
 // These functions write to the standard logger.
 
-// Print calls Output to print to the standard logger.
+// Print[..] calls Output to print to the standard logger.
 // Arguments are handled in the manner of fmt.Print.
 func Print(v ...interface{}) {
-	std.SetLevel(InfoLevel)
-	std.Output(2, fmt.Sprint(v...))
+	std.Print(v...)
 }
-
-// Printf calls Output to print to the standard logger.
-// Arguments are handled in the manner of fmt.Printf.
 func Printf(format string, v ...interface{}) {
-	std.SetLevel(InfoLevel)
-	std.Output(2, fmt.Sprintf(format, v...))
+	std.Printf(format, v...)
+}
+func Println(v ...interface{}) {
+	std.Println(v...)
 }
 func Print2f(tag, format string, v ...interface{}) {
 	Printf(tag+" "+format, v...)
 }
 
-// Println calls Output to print to the standard logger.
-// Arguments are handled in the manner of fmt.Println.
-func Println(v ...interface{}) {
-	std.SetLevel(InfoLevel)
-	std.Output(2, fmt.Sprintln(v...))
-}
-
-// Warn calls Output to print to the standard logger.
+// Warn[..] calls Output to print to the standard logger.
 // Arguments are handled in the manner of fmt.Print.
 func Warn(v ...interface{}) {
-	std.SetLevel(WarnLevel)
-	std.Output(2, fmt.Sprint(v...))
+	std.Warn(v...)
 }
-
-// Warnf calls Output to print to the standard logger.
-// Arguments are handled in the manner of fmt.Printf.
 func Warnf(format string, v ...interface{}) {
-	std.SetLevel(WarnLevel)
-	std.Output(2, fmt.Sprintf(format, v...))
+	std.Warnf(format, v...)
+}
+func Warnln(v ...interface{}) {
+	std.Warnln(v...)
 }
 func Warn2f(tag, format string, v ...interface{}) {
 	Warnf(tag+" "+format, v...)
 }
 
-// Warnln calls Output to print to the standard logger.
-// Arguments are handled in the manner of fmt.Println.
-func Warnln(v ...interface{}) {
-	std.SetLevel(WarnLevel)
-	std.Output(2, fmt.Sprintln(v...))
-}
-
-// Error calls Output to print to the standard logger.
+// Error[..] calls Output to print to the standard logger.
 // Arguments are handled in the manner of fmt.Print.
 func Error(v ...interface{}) {
-	std.SetLevel(ErrorLevel)
-	std.Output(2, fmt.Sprint(v...))
+	std.Error(v...)
 }
-
-// Errorf calls Output to print to the standard logger.
-// Arguments are handled in the manner of fmt.Printf.
 func Errorf(format string, v ...interface{}) {
-	std.SetLevel(ErrorLevel)
-	std.Output(2, fmt.Sprintf(format, v...))
+	std.Errorf(format, v...)
 }
 func Error2f(tag, format string, v ...interface{}) {
 	Errorf(tag+" "+format, v...)
 }
-
-// Errorln calls Output to print to the standard logger.
-// Arguments are handled in the manner of fmt.Println.
 func Errorln(v ...interface{}) {
-	std.SetLevel(ErrorLevel)
-	std.Output(2, fmt.Sprintln(v...))
+	std.Errorln(v...)
 }
 
-// Fatal is equivalent to Print() followed by a call to os.Exit(1).
+// Fatal[..] is equivalent to Print() followed by a call to os.Exit(1).
 func Fatal(v ...interface{}) {
-	std.SetLevel(FatalLevel)
-	std.Output(2, fmt.Sprint(v...))
-	os.Exit(1)
+	std.Fatal(v...)
 }
-
-// Fatalf is equivalent to Printf() followed by a call to os.Exit(1).
 func Fatalf(format string, v ...interface{}) {
-	std.SetLevel(FatalLevel)
-	std.Output(2, fmt.Sprintf(format, v...))
-	os.Exit(1)
+	std.Fatalf(format, v...)
 }
-
-// Fatalln is equivalent to Println() followed by a call to os.Exit(1).
 func Fatalln(v ...interface{}) {
-	std.SetLevel(FatalLevel)
-	std.Output(2, fmt.Sprintln(v...))
-	os.Exit(1)
+	std.Fatalln(v...)
 }
 
-// Panic is equivalent to Print() followed by a call to panic().
+// Panic[..] is equivalent to Print() followed by a call to panic().
 func Panic(v ...interface{}) {
-	std.SetLevel(PanicLevel)
-	s := fmt.Sprint(v...)
-	std.Output(2, s)
-	panic(s)
+	std.Panic(v...)
 }
-
-// Panicf is equivalent to Printf() followed by a call to panic().
 func Panicf(format string, v ...interface{}) {
-	std.SetLevel(PanicLevel)
-	s := fmt.Sprintf(format, v...)
-	std.Output(2, s)
-	panic(s)
+	std.Panicf(format, v...)
 }
-
-// Panicln is equivalent to Println() followed by a call to panic().
 func Panicln(v ...interface{}) {
-	std.SetLevel(PanicLevel)
-	s := fmt.Sprintln(v...)
-	std.Output(2, s)
-	panic(s)
+	std.Panicln(v...)
 }
 
 // Output writes the output for a logging event. The string s contains
@@ -503,4 +502,16 @@ func Panicln(v ...interface{}) {
 func Output(calldepth int, s string) error {
 	std.SetLevel(DebugLevel)
 	return std.Output(calldepth+1, s) // +1 for this frame.
+}
+func Debug(v ...interface{}) {
+	std.SetLevel(DebugLevel)
+	std.Output(2, fmt.Sprint(v...))
+}
+func Debugf(format string, v ...interface{}) {
+	std.SetLevel(DebugLevel)
+	std.Output(2, fmt.Sprintf(format, v...))
+}
+func Debugln(v ...interface{}) {
+	std.SetLevel(DebugLevel)
+	std.Output(2, fmt.Sprintln(v...))
 }

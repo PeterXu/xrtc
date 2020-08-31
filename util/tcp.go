@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"io"
-	"log"
 	"net"
 )
 
@@ -48,6 +47,10 @@ var SslServerHello = []byte{
 //  so max packet size is 64*1024.
 const kMaxIceTcpPacketSize = 64 * 1024
 
+func MaxIcePacketSize() int {
+	return kMaxIceTcpPacketSize
+}
+
 func WriteIceTcpPacket(conn net.Conn, body []byte) (int, error) {
 	if len(body) > kMaxIceTcpPacketSize {
 		return 0, errors.New("Too much data for ice-tcp")
@@ -70,17 +73,17 @@ func ReadIceTcpPacket(conn net.Conn, body []byte) (int, error) {
 		nret = -1
 	}
 	if nret != 2 {
-		log.Println("ice-tcp read head fail, err=", err, nret)
+		LogWarnln("ice-tcp read head fail, err=", err, nret)
 		return 0, errors.New("ice-tcp read head fail(2bytes)")
 	}
 
 	// get body size
 	dsize := HostToNet16(BytesToUint16(head))
 	if dsize == 0 {
-		log.Println("ice-tcp empty body")
+		LogWarnln("ice-tcp empty body")
 		return 0, nil
 	}
-	//log.Println("ice-tcp body size:", dsize)
+	//LogPrintln("ice-tcp body size:", dsize)
 
 	// read body packet
 	rpos := 0
@@ -89,13 +92,13 @@ func ReadIceTcpPacket(conn net.Conn, body []byte) (int, error) {
 		if nret, err = conn.Read(body[rpos : rpos+need]); err == nil {
 			rpos += nret
 		} else {
-			log.Println("ice-tcp read body err:", err)
+			LogWarnln("ice-tcp read body err:", err)
 			if err == io.EOF {
 				break // end
 			}
 			if nerr := err.(*net.OpError); nerr != nil {
 				if nerr.Timeout() || nerr.Temporary() {
-					log.Println("ice-tcp read clear error:", nerr)
+					LogWarnln("ice-tcp read clear error:", nerr)
 					err = nil // clear
 				}
 			}

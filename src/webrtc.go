@@ -19,6 +19,10 @@ func NewWebRTC(fname string) WebRTC {
 	if config == nil {
 		return nil
 	}
+	if config.common != nil {
+		initGeoLite(config.common.GeoLiteFile)
+	}
+
 	hub := NewMaxHub()
 	util.Sleep(100)
 	for _, cfg := range config.configs {
