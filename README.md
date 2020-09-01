@@ -1,20 +1,13 @@
 # xRTC
 
-***xRTC*** is an eXtendable WebRTC proxy, for REST-based WebRTC server.
+***xRTC*** is an eXtendable WebRTC proxy.
 
 - [x] Serve many WebRTC clients on one ICE port at the same time.
 - [x] Serve as an extendable node of WebRTC server (e.g. [Janus](https://github.com/meetecho/janus-gateway)).
-- [x] Support `icedirect`(transparent) between WebRTC client and server.(partial)
-
-
-<br>
-
-# ISSUES
-
-- [ ] For Janus the `icedirect` only supports tcp (set `icetcp: true`). 
-
+- [x] Support `icedirect|icetcp`(transparent) between WebRTC client and server.(partial)
 
 <br>
+
 
 ## 0. How To Use
 
@@ -25,7 +18,7 @@
 
 4. Send your ICE to proxy by HTTP-POST '/webrtc/route',
 {
-	'session_key': 'xxx', 	// optional
+	'session_key': 'xxx', 	    // optional
 	'offer_ice': {
 		'ufrag': 'xxx',			// required
 		'pwd': 'xxx',			// required
@@ -45,7 +38,7 @@
 5. Receive HTTP response from proxy.
 {
 	'session_key': 'xxx', 	// optional, the same as above
-	'candidates' : [			// required
+	'candidates' : [		// required
 		'xxx1',
 		'xxx2'
 	]
