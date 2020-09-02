@@ -17,8 +17,7 @@ enum RouteDataType {
 message RouteDataNode {
     optional string id = 1;
     optional string name = 2;
-    repeated string addr_list = 10;
-    optional uint32 rtt = 20;
+    repeated string addrs = 10;
     optional uint32 bwe_in = 21;
     optional uint32 bwe_out = 22;
     optional uint32 load = 23;

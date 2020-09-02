@@ -4,45 +4,75 @@ import (
 	"github.com/PeterXu/xrtc/util"
 )
 
+const (
+	kMaxRouteNodeNumber = 30
+)
+
 type LinkInfo struct {
 	toId    string
 	aKey    string
 	pktType RouteDataType
 }
 
-type NodeInfo struct {
-	*ObjTime
+type RoutePeer struct {
 	id       string
 	name     string
 	addrs    []string
-	rtt      int
-	location string
-	handler  ServiceHandler
+	capacity uint32
+	location *GeoLocation
+
+	*ObjTime
+	rtt     uint32
+	handler ServiceHandler
 }
 
-func NewNodeInfo() *NodeInfo {
-	return &NodeInfo{ObjTime: NewObjTime()}
-}
-
-func (n *NodeInfo) mergeFrom(info *RouteDataNode) {
-	if info != nil {
-		n.id = info.GetId()
-		n.name = info.GetName()
-		for _, addr := range info.GetAddrList() {
-			n.addrs = append(n.addrs, addr)
-		}
-		n.rtt = int(info.GetRtt())
-		n.location = info.GetLocation()
+func NewRoutePeer() *RoutePeer {
+	return &RoutePeer{
+		ObjTime:  NewObjTime(),
+		location: NewGeoLocation(),
 	}
 }
 
-func createRoutePacket(pbType RouteDataType, fromId string, seqNo uint32) *RoutePacket {
-	var pbRtt *RouteDataRtt
-	if pbType == RouteDataType_RouteDataInit ||
-		pbType == RouteDataType_RouteDataCheck {
-		nowTime := util.NowMs()
+func (p *RoutePeer) mergeFrom(node *RouteDataNode) {
+	if node != nil {
+		p.id = node.GetId()
+		p.name = node.GetName()
+		p.addrs = util.CloneArray(node.GetAddrs())
+		p.capacity = node.GetCapacity()
+		p.location.MergeFrom(node.GetLocation())
+	}
+}
+
+func (p *RoutePeer) genRouteNode() *RouteDataNode {
+	loc := p.location.String()
+	return &RouteDataNode{
+		Id:       &p.id,
+		Name:     &p.name,
+		Addrs:    util.CloneArray(p.addrs),
+		Capacity: &p.capacity,
+		Location: &loc,
+	}
+}
+
+/// Tools for RoutePacket
+
+func (r RouteDataRtt) getResult() int {
+	return int(util.NowMs() - r.GetReqTime() - r.GetDelta())
+}
+
+func (r RoutePacket) createAckPacket(fromId string, arrivalTime int64) *RoutePacket {
+	pbType := r.GetType() + 1
+	seqNo := r.GetSeqNo() + 1
+	pbRtt := r.GetRtt()
+	if pbRtt != nil {
+		reqTime := pbRtt.GetReqTime()
+		delta := int64(0)
+		if arrivalTime > 0 {
+			delta = util.NowMs() - arrivalTime
+		}
 		pbRtt = &RouteDataRtt{
-			ReqTime: &nowTime,
+			ReqTime: &reqTime,
+			Delta:   &delta,
 		}
 	}
 	return &RoutePacket{
@@ -53,22 +83,13 @@ func createRoutePacket(pbType RouteDataType, fromId string, seqNo uint32) *Route
 	}
 }
 
-func createRouteAckPacket(recvPkt *RoutePacket, fromId string, arrivalTime int64) *RoutePacket {
-	pbType := recvPkt.GetType() + 1
-	seqNo := recvPkt.GetSeqNo() + 1
-	reqTime := int64(0)
-	delta := int64(0)
-	pbRtt := recvPkt.GetRtt()
-	if pbRtt != nil {
-		reqTime = pbRtt.GetReqTime()
-		if arrivalTime > 0 {
-			delta = util.NowMs() - arrivalTime
-		}
-	}
-	if pbRtt != nil { // reset
+func createRoutePacket(pbType RouteDataType, fromId string, seqNo uint32) *RoutePacket {
+	var pbRtt *RouteDataRtt
+	if pbType == RouteDataType_RouteDataInit ||
+		pbType == RouteDataType_RouteDataCheck {
+		nowTime := util.NowMs()
 		pbRtt = &RouteDataRtt{
-			ReqTime: &reqTime,
-			Delta:   &delta,
+			ReqTime: &nowTime,
 		}
 	}
 	return &RoutePacket{

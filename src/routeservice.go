@@ -16,7 +16,7 @@ type RouteService struct {
 	*OneService
 	*NetHandler
 
-	nodes     map[string]*NodeInfo // should keep <= 30
+	peers     map[string]*RoutePeer
 	handlers  map[string]ServiceHandler
 	chanRoute chan interface{}
 
@@ -29,7 +29,7 @@ func NewRouteService(hub *MaxHub, cfg *ModConfig) *RouteService {
 	route := &RouteService{
 		OneService: NewOneService(TAG, hub, cfg),
 		NetHandler: NewNetHandler(),
-		nodes:      make(map[string]*NodeInfo),
+		peers:      make(map[string]*RoutePeer),
 		handlers:   make(map[string]ServiceHandler),
 		chanRoute:  make(chan interface{}),
 		clis:       make(map[string]*SrtClient),
@@ -62,8 +62,7 @@ func (s *RouteService) MyNode() *RouteDataNode {
 	return &RouteDataNode{
 		Id:       &myId,
 		Name:     &myName,
-		AddrList: nil,
-		Load:     nil,
+		Addrs:    s.RouteParams().PublicAddrs,
 		Capacity: &s.RouteParams().Capacity,
 		Location: &myLocation,
 	}
@@ -160,13 +159,13 @@ func (s *RouteService) OnClose(from ServiceHandler) {
 	s.chanRoute <- NewObjMessageStatus(kObjStatusClose, from)
 }
 
-func (s *RouteService) processPacket(data []byte, from ServiceHandler) error {
+func (s *RouteService) processPacket(data []byte, handler ServiceHandler) error {
 	packet := &RoutePacket{}
 	if err := proto.Unmarshal(data, packet); err != nil {
 		return err
 	}
 
-	ch := from.GetFeedChan()
+	ch := handler.GetFeedChan()
 	fromId := packet.GetFromId()
 	toId := packet.GetToId()
 
@@ -191,33 +190,62 @@ func (s *RouteService) processPacket(data []byte, from ServiceHandler) error {
 		}
 	case RouteDataType_RouteDataInit, RouteDataType_RouteDataInitAck,
 		RouteDataType_RouteDataCheck, RouteDataType_RouteDataCheckAck:
-		if len(fromId) == 0 {
-			return errors.New("wrong id in route init/ack")
+		if len(fromId) == 0 || fromId == s.MyId() {
+			return errors.New("wrong id in route packet:" + fromId)
 		}
-		node, ok := s.nodes[fromId]
+
+		// check the sender
+		peer, ok := s.peers[fromId]
 		if !ok {
 			if pbType == RouteDataType_RouteDataInit || pbType == RouteDataType_RouteDataInitAck {
-				node = NewNodeInfo()
-				s.nodes[fromId] = node
+				peer = NewRoutePeer()
+				s.peers[fromId] = peer
 			}
 		}
-		if node == nil {
-			return errors.New("no route node for id=" + fromId)
+		if peer == nil {
+			return errors.New("no route peer for id=" + fromId)
 		}
-		node.UpdateTime()
-		node.handler = from
-		node.mergeFrom(packet.GetNode())
+
+		// update sender self
+		peer.UpdateTime()
+		peer.handler = handler
+		peer.mergeFrom(packet.GetNode())
+
+		// update sender-owned
+		for _, node := range packet.GetNodes() {
+			if val, ok := s.peers[node.GetId()]; ok {
+				val.mergeFrom(node)
+			} else {
+				newPeer := NewRoutePeer()
+				newPeer.mergeFrom(node)
+				s.peers[node.GetId()] = newPeer
+			}
+		}
 
 		if pbType == RouteDataType_RouteDataInit || pbType == RouteDataType_RouteDataCheck {
-			respPkt := createRouteAckPacket(packet, s.MyId(), 0)
+			// resp InitAck or CheckAck
+			respPkt := packet.createAckPacket(s.MyId(), 0)
+
+			// add self
+			respPkt.Node = s.MyNode()
+
+			// add self-owned(TODO)
+			for id, item := range s.peers {
+				if id != fromId {
+					if tmp := item.genRouteNode(); tmp != nil {
+						respPkt.Nodes = append(respPkt.Nodes, tmp)
+					}
+				}
+				if len(respPkt.Nodes) >= kMaxRouteNodeNumber {
+					break
+				}
+			}
 			if respData, err := proto.Marshal(respPkt); err == nil {
-				from.SendData(respData, nil)
+				handler.SendData(respData, nil)
 			}
 		} else {
-			pbRtt := packet.GetRtt()
-			if pbRtt != nil {
-				rttVal := int(util.NowMs() - pbRtt.GetReqTime() - pbRtt.GetDelta())
-				node.rtt = rttVal
+			if pbRtt := packet.GetRtt(); pbRtt != nil {
+				peer.rtt = uint32(pbRtt.getResult())
 			}
 		}
 	default:
@@ -229,19 +257,21 @@ func (s *RouteService) processPacket(data []byte, from ServiceHandler) error {
 
 func (s *RouteService) checkStatus() {
 	// remove timeout handler
-	for _, node := range s.nodes {
-		if node.handler != nil && node.handler.CheckTimeout(5*1000) {
-			node.handler.Close()
-			s.closeHandler(node, node.handler)
+	for _, item := range s.peers {
+		handler := item.handler
+		if handler != nil && handler.CheckTimeout(5*1000) {
+			handler.Close()
+			s.closeHandler(item, handler)
 		}
 	}
 
 	// send check peridocally
-	for _, node := range s.nodes {
-		if node.handler != nil && node.CheckTimeout(3000) {
-			packet := createRoutePacket(RouteDataType_RouteDataCheck, s.MyId(), node.handler.GetOneSeqNo())
+	for _, item := range s.peers {
+		handler := item.handler
+		if handler != nil && item.CheckTimeout(3*1000) {
+			packet := createRoutePacket(RouteDataType_RouteDataCheck, s.MyId(), handler.GetOneSeqNo())
 			if data, err := proto.Marshal(packet); err == nil {
-				node.handler.SendData(data, nil)
+				handler.SendData(data, nil)
 			}
 		}
 	}
@@ -251,10 +281,11 @@ func (s *RouteService) checkStatus() {
 		break
 		if cli, ok := s.clis[addr]; !ok {
 			if cli = NewSrtClient(s, addr); cli != nil {
-				packet := createRoutePacket(RouteDataType_RouteDataInit, s.MyId(), cli.handler.GetOneSeqNo())
+				handler := cli.handler
+				packet := createRoutePacket(RouteDataType_RouteDataInit, s.MyId(), handler.GetOneSeqNo())
 				packet.Node = s.MyNode()
 				if data, err := proto.Marshal(packet); err == nil {
-					cli.handler.SendData(data, nil)
+					handler.SendData(data, nil)
 				}
 				s.clis[addr] = cli
 			} else {
@@ -264,30 +295,30 @@ func (s *RouteService) checkStatus() {
 	}
 }
 
-func (s *RouteService) closeHandler(node *NodeInfo, handler ServiceHandler) {
-	if node == nil {
-		for _, val := range s.nodes {
-			if val.handler == handler {
-				node = val
+func (s *RouteService) closeHandler(peer *RoutePeer, handler ServiceHandler) {
+	if peer == nil {
+		for _, item := range s.peers {
+			if peer.handler == handler {
+				peer = item
 				break
 			}
 		}
 	}
-	if node != nil {
-		delete(s.handlers, node.id)
+	if peer != nil {
+		delete(s.handlers, peer.id)
 		for addr, cli := range s.clis {
-			if cli.handler == node.handler {
+			if cli.handler == peer.handler {
 				delete(s.clis, addr)
 				break
 			}
 		}
-		node.handler = nil
+		peer.handler = nil
 	}
 }
 
 func (s *RouteService) getHandlerById(id string) ServiceHandler {
-	if val, ok := s.nodes[id]; ok {
-		return val.handler
+	if peer, ok := s.peers[id]; ok {
+		return peer.handler
 	}
 	return nil
 }
@@ -308,14 +339,14 @@ func (s *RouteService) selectOneHandler(pkt *RoutePacket) ServiceHandler {
 		handler = s.getHandlerById(pkt.GetToId())
 	}
 	if handler == nil {
-		rtt := 0xffff
-		for _, val := range s.nodes {
-			if val.handler != nil {
+		var rtt uint32 = 0xffff
+		for _, item := range s.peers {
+			if item.handler != nil {
 				if handler == nil {
-					handler = val.handler
-				} else if val.rtt > 0 && val.rtt < rtt {
-					rtt = val.rtt
-					handler = val.handler
+					handler = item.handler
+				} else if item.rtt < rtt {
+					rtt = item.rtt
+					handler = item.handler
 				}
 			}
 		}

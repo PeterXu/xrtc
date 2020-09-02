@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strings"
 
 	"github.com/PeterXu/xrtc/log"
 	"github.com/oschwald/geoip2-golang"
@@ -42,6 +43,18 @@ func (loc *GeoLocation) Get(key string) string {
 		return val
 	}
 	return ""
+}
+
+func (loc *GeoLocation) MergeFrom(props string) {
+	if len(props) > 0 {
+		parts := strings.Split(props, ";")
+		for _, part := range parts {
+			attrs := strings.SplitN(part, "=", 2)
+			if len(attrs) == 2 {
+				loc.Add(attrs[0], attrs[1])
+			}
+		}
+	}
 }
 
 func (loc *GeoLocation) String() string {

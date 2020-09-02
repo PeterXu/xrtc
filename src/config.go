@@ -3,7 +3,6 @@ package webrtc
 import (
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/PeterXu/xrtc/log"
 	"github.com/PeterXu/xrtc/util"
@@ -232,12 +231,7 @@ func (n *RouteNetParams) Load(service yaml.Map, addrs []string) error {
 	}
 	loc := getYamlString(node, "location")
 	if len(loc) > 0 {
-		parts := strings.Split(loc, ";")
-		for _, part := range parts {
-			if pair := util.ParseKeyValue(part, "="); pair != nil {
-				n.Location.Add(pair.First, pair.Second)
-			}
-		}
+		n.Location.MergeFrom(loc)
 		log.Println(uTAG, "location:", loc, n.Location)
 	}
 	n.Capacity = uint32(yaml.ToInt(node.Key("capacity"), 0))
